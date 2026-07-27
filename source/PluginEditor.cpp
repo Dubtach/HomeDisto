@@ -3,46 +3,56 @@
 PluginEditor::PluginEditor (PluginProcessor& p)
     : AudioProcessorEditor (&p), processorRef (p)
 {
-    juce::ignoreUnused (processorRef);
+    // Apply the flat 2D styling
+    setLookAndFeel(&flatLookAndFeel);
 
-    addAndMakeVisible (inspectButton);
+    // Setup Drive Slider
+    driveSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    driveSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    addAndMakeVisible(driveSlider);
+    driveAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        processorRef.treeState, "DRIVE", driveSlider);
 
-    // this chunk of code instantiates and opens the melatonin inspector
-    inspectButton.onClick = [&] {
-        if (!inspector)
-        {
-            inspector = std::make_unique<melatonin::Inspector> (*this);
-            inspector->onClose = [this]() { inspector.reset(); };
-        }
+    // Setup Output Slider
+    outputSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    outputSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    addAndMakeVisible(outputSlider);
+    outputAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        processorRef.treeState, "OUTPUT", outputSlider);
 
-        inspector->setVisible (true);
-    };
+    // Setup Mode Box
+    modeBox.addItemList({"70s (Soft)", "80s (Hard)", "90s (Asym)", "Modern (Fold)"}, 1);
+    addAndMakeVisible(modeBox);
+    modeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+        processorRef.treeState, "MODE", modeBox);
 
-    // Make sure that before the constructor has finished, you've set the
-    // editor's size to whatever you need it to be.
     setSize (400, 300);
 }
 
 PluginEditor::~PluginEditor()
 {
+    setLookAndFeel(nullptr);
 }
 
 void PluginEditor::paint (juce::Graphics& g)
 {
-    // (Our component is opaque, so we must completely fill the background with a solid colour)
-    g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
+    // Pure flat background
+    g.fillAll (juce::Colour (0xff181818));
 
-    auto area = getLocalBounds();
+    // Flat typography
     g.setColour (juce::Colours::white);
-    g.setFont (16.0f);
-    auto helloWorld = juce::String ("Hello from ") + PRODUCT_NAME_WITHOUT_VERSION + " v" VERSION + " running in " + CMAKE_BUILD_TYPE;
-    g.drawText (helloWorld, area.removeFromTop (150), juce::Justification::centred, false);
+    g.setFont (juce::FontOptions(24.0f, juce::Font::bold));
+    g.drawText ("HOME DISTO", 0, 20, getWidth(), 40, juce::Justification::centred, false);
+    
+    g.setFont (juce::FontOptions(14.0f, juce::Font::plain));
+    g.drawText ("DRIVE", 50, 230, 100, 20, juce::Justification::centred, false);
+    g.drawText ("OUTPUT", 250, 230, 100, 20, juce::Justification::centred, false);
 }
 
 void PluginEditor::resized()
 {
-    // layout the positions of your child components here
-    auto area = getLocalBounds();
-    area.removeFromBottom(50);
-    inspectButton.setBounds (getLocalBounds().withSizeKeepingCentre(100, 50));
+    // Layout 2D components
+    modeBox.setBounds (125, 80, 150, 30);
+    driveSlider.setBounds (50, 130, 100, 100);
+    outputSlider.setBounds (250, 130, 100, 100);
 }
