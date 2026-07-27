@@ -106,14 +106,15 @@ jobs:
           # 1. Hardcode variables from CMakeLists.txt
           PROJECT_NAME="HomeDisto"
           PRODUCT_NAME="Home Disto"
-          VERSION="1.0.0"
+          # 2. Read the version directly from the file!
+          VERSION=$(cat VERSION | tr -d '[:space:]')
 
-          # 2. Add them to GITHUB_ENV
+          # 3. Add them to GITHUB_ENV
           echo "PROJECT_NAME=$PROJECT_NAME" >> $GITHUB_ENV
           echo "PRODUCT_NAME=$PRODUCT_NAME" >> $GITHUB_ENV
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           
-          # 3. Define paths using the local shell variables
+          # 4. Define paths using the local shell variables
           ARTIFACTS_PATH=${{ env.BUILD_DIR }}/${PROJECT_NAME}_artefacts/${{ env.BUILD_TYPE }}
           echo "ARTIFACTS_PATH=$ARTIFACTS_PATH" >> $GITHUB_ENV
           echo "VST3_PATH=$ARTIFACTS_PATH/VST3/${PRODUCT_NAME}.vst3" >> $GITHUB_ENV
