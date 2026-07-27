@@ -17,7 +17,7 @@ set(COMPANY_NAME "Home")
 set(BUNDLE_ID "com.home.homedisto")
 
 # Change me! Set the plugin formats you want built
-set(FORMATS Standalone AU VST3 AUv3 CLAP)
+set(FORMATS Standalone AU VST3 AUv3)
 
 # 3. Mandatory JUCE inclusion (Must precede juce_add_plugin)
 # Assumes JUCE is a subdirectory/submodule in your project root
