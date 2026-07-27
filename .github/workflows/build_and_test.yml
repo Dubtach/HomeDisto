@@ -14,7 +14,6 @@ concurrency:
 env:
   BUILD_TYPE: Release
   BUILD_DIR: Builds
-  DISPLAY: :0 # linux pluginval needs this
   HOMEBREW_NO_INSTALL_CLEANUP: 1
   SCCACHE_GHA_ENABLED: true
   SCCACHE_CACHE_MULTIARCH: 1
@@ -36,10 +35,6 @@ jobs:
       fail-fast: false # show all errors for each platform (vs. cancel jobs on error)
       matrix:
         include:
-          - name: Linux
-            os: ubuntu-22.04
-            pluginval-binary: ./pluginval
-            extra-flags: -G Ninja -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld -DCMAKE_MODULE_LINKER_FLAGS=-fuse-ld=lld
           - name: macOS
             os: macos-14
             pluginval-binary: pluginval.app/Contents/MacOS/pluginval
@@ -52,23 +47,6 @@ jobs:
     steps:
       # Setup MSVC toolchain and developer command prompt (Windows)
       - uses: ilammy/msvc-dev-cmd@v1
-
-      # Use clang on Linux (all three platforms now use Clang)
-      - name: Set up Clang
-        if: runner.os == 'Linux'
-        uses: egor-tensin/setup-clang@v2
-
-      # This also starts up our "fake" display (Xvfb), needed for pluginval
-      - name: Install JUCE's Linux Deps
-        if: runner.os == 'Linux'
-        run: |
-          # IPP setup
-          wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor | sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
-          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
-          
-          # Added pkg-config, libxrandr-dev, and libxcursor-dev to the install list
-          sudo apt-get update && sudo apt install -y pkg-config libasound2-dev libx11-dev libxinerama-dev libxext-dev libxrandr-dev libxcursor-dev libfreetype6-dev libwebkit2gtk-4.1-dev libgtk-3-dev libglu1-mesa-dev xvfb ninja-build intel-oneapi-ipp-devel
-          sudo /usr/bin/Xvfb $DISPLAY &
 
       - name: Install IPP (Windows)
         if: (runner.os == 'Windows')
@@ -187,8 +165,8 @@ jobs:
       #     xcrun notarytool submit "${{ env.ARTIFACT_NAME }}.pkg" --apple-id ${{ secrets.NOTARIZATION_USERNAME }} --password ${{ secrets.NOTARIZATION_PASSWORD }} --team-id ${{ secrets.TEAM_ID }} --wait
       #     xcrun stapler staple "${{ env.ARTIFACT_NAME }}.pkg"
 
-      - name: Zip (Linux and macOS)
-        if: ${{ runner.os == 'Linux' || runner.os == 'macOS' }}
+      - name: Zip (macOS)
+        if: ${{ runner.os == 'macOS' }}
         working-directory: ${{ env.ARTIFACTS_PATH }}
         run: 7z a -tzip "${{ env.ARTIFACT_NAME }}.zip" "-xr!lib${{ env.PRODUCT_NAME }}_SharedCode.a" .
 
@@ -205,8 +183,8 @@ jobs:
           name: ${{ env.ARTIFACT_NAME }}.exe
           path: "${{ env.ARTIFACTS_PATH }}/${{ env.ARTIFACT_NAME }}.exe"
 
-      - name: Upload Zip (Linux and macOS)
-        if: ${{ runner.os == 'Linux' || runner.os == 'macOS' }}
+      - name: Upload Zip (macOS)
+        if: ${{ runner.os == 'macOS' }}
         uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ARTIFACT_NAME }}.zip
