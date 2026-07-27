@@ -41,8 +41,8 @@ juce_add_plugin("${PROJECT_NAME}"
 
 # 4. Add your C++ source files (Adjust paths if yours differ)
 target_sources("${PROJECT_NAME}" PRIVATE
-    Source/PluginProcessor.cpp
-    Source/PluginEditor.cpp
+    source/PluginProcessor.cpp
+    source/PluginEditor.cpp
 )
 
 # 5. Link necessary JUCE modules
