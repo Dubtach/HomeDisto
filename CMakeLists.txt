@@ -37,9 +37,6 @@ juce_add_plugin("${PROJECT_NAME}"
     
     FORMATS ${FORMATS}
     PRODUCT_NAME "${PRODUCT_NAME}"
-    
-    # --- FIX: Disables VST2 replacement requirement since VST2 is not being built ---
-    VST3_CAN_REPLACE_VST2 FALSE
 )
 
 # 4. Add your C++ source files (Adjust paths if yours differ)
@@ -52,4 +49,9 @@ target_sources("${PROJECT_NAME}" PRIVATE
 target_link_libraries("${PROJECT_NAME}" PRIVATE
     juce::juce_audio_utils
     juce::juce_audio_processors
+)
+
+# --- FIX: Disables VST2 parameter automation replacement check ---
+target_compile_definitions("${PROJECT_NAME}" PUBLIC
+    JUCE_VST3_CAN_REPLACE_VST2=0
 )
