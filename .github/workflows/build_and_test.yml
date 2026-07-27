@@ -101,21 +101,27 @@ jobs:
         working-directory: ${{ env.BUILD_DIR }}
         run: ctest --verbose --output-on-failure
 
-      - name: Read in .env from CMake # see GitHubENV.cmake
-        run: |
-          cat .env # show us the config
-          cat .env >> $GITHUB_ENV # pull in our PRODUCT_NAME, etc
-
       - name: Set additional env vars for next steps
         run: |
-          ARTIFACTS_PATH=${{ env.BUILD_DIR }}/${{ env.PROJECT_NAME }}_artefacts/${{ env.BUILD_TYPE }}
+          # 1. Hardcode variables from CMakeLists.txt
+          PROJECT_NAME="HomeDisto"
+          PRODUCT_NAME="Home Disto"
+          VERSION="1.0.0"
+
+          # 2. Add them to GITHUB_ENV
+          echo "PROJECT_NAME=$PROJECT_NAME" >> $GITHUB_ENV
+          echo "PRODUCT_NAME=$PRODUCT_NAME" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          
+          # 3. Define paths using the local shell variables
+          ARTIFACTS_PATH=${{ env.BUILD_DIR }}/${PROJECT_NAME}_artefacts/${{ env.BUILD_TYPE }}
           echo "ARTIFACTS_PATH=$ARTIFACTS_PATH" >> $GITHUB_ENV
-          echo "VST3_PATH=$ARTIFACTS_PATH/VST3/${{ env.PRODUCT_NAME }}.vst3" >> $GITHUB_ENV
-          echo "AU_PATH=$ARTIFACTS_PATH/AU/${{ env.PRODUCT_NAME }}.component" >> $GITHUB_ENV
-          echo "AUV3_PATH=$ARTIFACTS_PATH/AUv3/${{ env.PRODUCT_NAME }}.appex" >> $GITHUB_ENV
-          echo "CLAP_PATH=$ARTIFACTS_PATH/CLAP/${{ env.PRODUCT_NAME }}.clap" >> $GITHUB_ENV
-          echo "STANDALONE_PATH=$ARTIFACTS_PATH/Standalone/${{ env.PRODUCT_NAME }}.app" >> $GITHUB_ENV
-          echo "ARTIFACT_NAME=${{ env.PRODUCT_NAME }}-${{ env.VERSION }}-${{ runner.os }}" >> $GITHUB_ENV
+          echo "VST3_PATH=$ARTIFACTS_PATH/VST3/${PRODUCT_NAME}.vst3" >> $GITHUB_ENV
+          echo "AU_PATH=$ARTIFACTS_PATH/AU/${PRODUCT_NAME}.component" >> $GITHUB_ENV
+          echo "AUV3_PATH=$ARTIFACTS_PATH/AUv3/${PRODUCT_NAME}.appex" >> $GITHUB_ENV
+          echo "CLAP_PATH=$ARTIFACTS_PATH/CLAP/${PRODUCT_NAME}.clap" >> $GITHUB_ENV
+          echo "STANDALONE_PATH=$ARTIFACTS_PATH/Standalone/${PRODUCT_NAME}.app" >> $GITHUB_ENV
+          echo "ARTIFACT_NAME=${PRODUCT_NAME}-${VERSION}-${{ runner.os }}" >> $GITHUB_ENV
 
       - name: Pluginval
         run: |
