@@ -1,8 +1,8 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-//==============================================================================
-PluginProcessor::PluginProcessor()
+HomeDistoAudioProcessor::HomeDistoAudioProcessor()
+#ifndef JucePlugin_PreferredChannelConfigurations
      : AudioProcessor (BusesProperties()
                      #if ! JucePlugin_IsMidiEffect
                       #if ! JucePlugin_IsSynth
@@ -10,62 +10,67 @@ PluginProcessor::PluginProcessor()
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
-                       ),
-       treeState (*this, nullptr, "PARAMETERS", createParameterLayout())
+                       ), apvts(*this, nullptr, "Parameters", createParameters())
+#endif
 {
+    // WaveShaper for Distortion (Soft Clipping / Tanh)
+    driveShaper.functionToUse = [](float x) { return std::tanh(x); };
 }
 
-PluginProcessor::~PluginProcessor()
-{
-}
+HomeDistoAudioProcessor::~HomeDistoAudioProcessor() {}
 
-juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParameterLayout()
+juce::AudioProcessorValueTreeState::ParameterLayout HomeDistoAudioProcessor::createParameters()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
-
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("DRIVE", "Drive", 0.0f, 4.0f, 1.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("OUTPUT", "Output", 0.0f, 2.0f, 1.0f));
-    params.push_back(std::make_unique<juce::AudioParameterChoice>("MODE", "Mode", 
-        juce::StringArray{"70s (Soft)", "80s (Hard)", "90s (Asym)", "Modern (Fold)"}, 0));
+    
+    // Distortion Engine
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("DRIVE", "Drive", 1.0f, 10.0f, 1.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("SHAPE", "Shape", 0.1f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("LOW", "Low", 20.0f, 20000.0f, 250.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("MID", "Mid", 20.0f, 20000.0f, 1000.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("HIGH", "High", 20.0f, 20000.0f, 4000.0f));
+    
+    // Domestic Color
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("REVERB", "Reverb", 0.0f, 1.0f, 0.2f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("SAT", "Saturation", 1.0f, 5.0f, 1.0f));
+    
+    // Output
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("MIX", "Mix", 0.0f, 1.0f, 1.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("OUT", "Output", 0.0f, 2.0f, 1.0f));
 
     return { params.begin(), params.end() };
 }
 
-//==============================================================================
-const juce::String PluginProcessor::getName() const { return JucePlugin_Name; }
-bool PluginProcessor::acceptsMidi() const { return false; }
-bool PluginProcessor::producesMidi() const { return false; }
-bool PluginProcessor::isMidiEffect() const { return false; }
-double PluginProcessor::getTailLengthSeconds() const { return 0.0; }
-int PluginProcessor::getNumPrograms() { return 1; }
-int PluginProcessor::getCurrentProgram() { return 0; }
-void PluginProcessor::setCurrentProgram (int index) { juce::ignoreUnused (index); }
-const juce::String PluginProcessor::getProgramName (int index) { juce::ignoreUnused (index); return {}; }
-void PluginProcessor::changeProgramName (int index, const juce::String& newName) { juce::ignoreUnused (index, newName); }
-
-//==============================================================================
-void PluginProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    juce::ignoreUnused (sampleRate, samplesPerBlock);
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate = sampleRate;
+    spec.maximumBlockSize = samplesPerBlock;
+    spec.numChannels = getTotalNumOutputChannels();
+
+    driveShaper.prepare(spec);
+    lowPass.prepare(spec);
+    lowPass.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+    highPass.prepare(spec);
+    highPass.setType(juce::dsp::StateVariableTPTFilterType::highpass);
+    bandPass.prepare(spec);
+    bandPass.setType(juce::dsp::StateVariableTPTFilterType::bandpass);
+    
+    reverb.setSampleRate(sampleRate);
 }
 
-void PluginProcessor::releaseResources() {}
+void HomeDistoAudioProcessor::releaseResources() {}
 
-bool PluginProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+bool HomeDistoAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
     if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
      && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
         return false;
-
-    if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
-        return false;
-
     return true;
 }
 
-void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
+void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
-    juce::ignoreUnused (midiMessages);
     juce::ScopedNoDenormals noDenormals;
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
@@ -73,57 +78,80 @@ void PluginProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    float drive = treeState.getRawParameterValue("DRIVE")->load();
-    float output = treeState.getRawParameterValue("OUTPUT")->load();
-    int mode = static_cast<int>(treeState.getRawParameterValue("MODE")->load());
+    // Get Parameters
+    float drive = apvts.getRawParameterValue("DRIVE")->load();
+    float lowFreq = apvts.getRawParameterValue("LOW")->load();
+    float mix = apvts.getRawParameterValue("MIX")->load();
+    float outVol = apvts.getRawParameterValue("OUT")->load();
+    float revAmount = apvts.getRawParameterValue("REVERB")->load();
 
+    // Update Filter and Reverb Settings
+    lowPass.setCutoffFrequency(lowFreq);
+    reverbParams.roomSize = revAmount;
+    reverbParams.wetLevel = revAmount;
+    reverbParams.dryLevel = 1.0f - (revAmount * 0.5f);
+    reverb.setParameters(reverbParams);
+
+    // Copy dry buffer for Mix
+    juce::AudioBuffer<float> dryBuffer;
+    dryBuffer.makeCopyOf(buffer);
+
+    juce::dsp::AudioBlock<float> block (buffer);
+    juce::dsp::ProcessContextReplacing<float> context (block);
+
+    // 1. Apply Drive
     for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
-        auto* channelData = buffer.getWritePointer (channel);
+        auto* channelData = buffer.getWritePointer(channel);
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        {
+            channelData[sample] *= drive; 
+        }
+    }
+    
+    // 2. WaveShaper Distortion
+    driveShaper.process(context);
+
+    // 3. Filters
+    lowPass.process(context);
+
+    // 4. Reverb Processing
+    if (totalNumInputChannels == 1)
+        reverb.processMono(buffer.getWritePointer(0), buffer.getNumSamples());
+    else if (totalNumInputChannels == 2)
+        reverb.processStereo(buffer.getWritePointer(0), buffer.getWritePointer(1), buffer.getNumSamples());
+
+    // 5. Dry/Wet Mix & Output Gain
+    for (int channel = 0; channel < totalNumInputChannels; ++channel)
+    {
+        auto* channelData = buffer.getWritePointer(channel);
+        auto* dryData = dryBuffer.getReadPointer(channel);
 
         for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
         {
-            float input = channelData[sample] * drive; 
-            float processed = 0.0f;
-
-            switch (mode) {
-                case 0: // 70s Soft Clipping
-                    processed = std::tanh(input);
-                    break;
-                case 1: // 80s Hard Clipping
-                    processed = std::clamp(input, -1.0f, 1.0f);
-                    break;
-                case 2: // 90s Asymmetric
-                    processed = (input > 0.0f) ? std::tanh(input) : std::clamp(input, -0.5f, 0.0f);
-                    break;
-                case 3: // Modern Wavefolding
-                    processed = std::sin(input);
-                    break;
-            }
-
-            channelData[sample] = processed * output;
+            float wetSignal = channelData[sample];
+            float drySignal = dryData[sample];
+            channelData[sample] = (drySignal * (1.0f - mix) + wetSignal * mix) * outVol;
         }
     }
 }
 
-//==============================================================================
-bool PluginProcessor::hasEditor() const { return true; }
-juce::AudioProcessorEditor* PluginProcessor::createEditor() { return new PluginEditor (*this); }
-
-//==============================================================================
-void PluginProcessor::getStateInformation (juce::MemoryBlock& destData)
+void HomeDistoAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    auto state = treeState.copyState();
+    auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml (state.createXml());
     copyXmlToBinary (*xml, destData);
 }
 
-void PluginProcessor::setStateInformation (const void* data, int sizeInBytes)
+void HomeDistoAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
-    if (xmlState != nullptr)
-        if (xmlState->hasTagName (treeState.state.getType()))
-            treeState.replaceState (juce::ValueTree::fromXml (*xmlState));
+    if (xmlState.get() != nullptr)
+        if (xmlState->hasTagName (apvts.state.getType()))
+            apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
 }
 
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new PluginProcessor(); }
+juce::AudioProcessorEditor* HomeDistoAudioProcessor::createEditor()
+{
+    return new HomeDistoAudioProcessorEditor (*this);
+}
