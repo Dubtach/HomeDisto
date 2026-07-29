@@ -48,48 +48,59 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     // Background
     g.fillAll (juce::Colour(0xFF1E1E1E)); 
 
-    // Panels
+    // Header Title (Fills the empty space at the top)
+    g.setColour(juce::Colour(0xFFFF9900));
+    g.setFont(juce::Font(22.0f, juce::Font::bold));
+    g.drawText("HOME DISTO", 0, 15, 800, 30, juce::Justification::centred);
+
+    // Panels (Shifted up to Y=60 for better balance)
     g.setColour(juce::Colour(0xFF2D2D2D));
-    g.fillRoundedRectangle(20, 100, 500, 250, 10); // Distortion Panel
-    g.fillRoundedRectangle(540, 100, 240, 250, 10); // Color Panel
-    g.fillRoundedRectangle(20, 370, 760, 110, 10); // Bottom Panel
+    g.fillRoundedRectangle(20, 60, 500, 300, 10);  // Distortion Panel
+    g.fillRoundedRectangle(540, 60, 240, 300, 10); // Color Panel
+    g.fillRoundedRectangle(20, 380, 760, 100, 10); // Bottom Panel
 
-    // Text Labels
+    // Text Labels Configuration
     g.setColour (juce::Colours::white);
-    g.setFont (16.0f);
+    g.setFont (15.0f);
     
-    // Panel Titles
-    g.drawText("Distortion Engine", 20, 110, 500, 20, juce::Justification::centred);
-    g.drawText("Domestic Color", 540, 110, 240, 20, juce::Justification::centred);
+    // Panel Subtitles (Dimmed slightly for hierarchy)
+    g.setColour(juce::Colour(0xFFAAAAAA)); 
+    g.drawText("Distortion Engine", 20, 75, 500, 20, juce::Justification::centred);
+    g.drawText("Domestic Color", 540, 75, 240, 20, juce::Justification::centred);
 
-    // Knob Labels
-    g.drawText("Drive", 50, 290, 150, 20, juce::Justification::centred);
-    g.drawText("Shape", 250, 130, 200, 20, juce::Justification::centred);
-    g.drawText("Low", 220, 290, 80, 20, juce::Justification::centred);
-    g.drawText("Mid", 320, 290, 80, 20, juce::Justification::centred);
-    g.drawText("High", 420, 290, 80, 20, juce::Justification::centred);
+    // Reset colour for parameter labels
+    g.setColour (juce::Colours::white);
+
+    // Distortion Labels (Perfectly matched to bounding boxes)
+    g.drawText("Drive", 50, 285, 160, 20, juce::Justification::centred);
+    g.drawText("Shape", 240, 115, 230, 20, juce::Justification::centred);
+    g.drawText("Low",   240, 285,  70, 20, juce::Justification::centred);
+    g.drawText("Mid",   320, 285,  70, 20, juce::Justification::centred);
+    g.drawText("High",  400, 285,  70, 20, juce::Justification::centred);
     
-    g.drawText("Reverb", 550, 290, 80, 20, juce::Justification::centred);
-    g.drawText("Saturation", 670, 290, 80, 20, juce::Justification::centred);
+    // Color Labels
+    g.drawText("Reverb",     565, 285, 80, 20, juce::Justification::centred);
+    g.drawText("Saturation", 675, 245, 80, 20, juce::Justification::centred);
 
-    g.drawText("Mix", 410, 450, 80, 20, juce::Justification::centred);
-    g.drawText("Output", 520, 450, 80, 20, juce::Justification::centred);
+    // Bottom Panel Labels (Centered in the layout)
+    g.drawText("Mix",    310, 460, 80, 20, juce::Justification::centred);
+    g.drawText("Output", 410, 460, 80, 20, juce::Justification::centred);
 }
 
 void HomeDistoAudioProcessorEditor::resized()
 {
     // Distortion Engine
-    driveKnob.setBounds(50, 140, 150, 150); // Large Left Knob
-    shapeSlider.setBounds(250, 160, 200, 30);
-    lowKnob.setBounds(220, 210, 80, 80);
-    midKnob.setBounds(320, 210, 80, 80);
-    highKnob.setBounds(420, 210, 80, 80);
+    driveKnob.setBounds(50, 120, 160, 160);
+    shapeSlider.setBounds(240, 140, 230, 30);
+    lowKnob.setBounds(240, 210, 70, 70);
+    midKnob.setBounds(320, 210, 70, 70);
+    highKnob.setBounds(400, 210, 70, 70);
 
     // Domestic Color
-    reverbSlider.setBounds(570, 140, 40, 150);
-    satKnob.setBounds(670, 200, 80, 80);
+    reverbSlider.setBounds(580, 120, 50, 160);
+    satKnob.setBounds(675, 160, 80, 80);
 
-    // Bottom Bar
-    mixKnob.setBounds(410, 380, 80, 80);
-    outputKnob.setBounds(520, 380, 80, 80);
+    // Bottom Bar (Symmetrical inside the 760px panel)
+    mixKnob.setBounds(310, 385, 80, 80);
+    outputKnob.setBounds(410, 385, 80, 80);
 }

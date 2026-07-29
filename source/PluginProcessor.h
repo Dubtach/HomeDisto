@@ -28,17 +28,17 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
-    // Parameter State
     juce::AudioProcessorValueTreeState apvts;
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameters();
 
-    // DSP Modules
-    juce::dsp::WaveShaper<float> driveShaper;
-    juce::dsp::StateVariableTPTFilter<float> lowPass;
-    juce::dsp::StateVariableTPTFilter<float> highPass;
-    juce::dsp::StateVariableTPTFilter<float> bandPass;
+    // Proper 3-Band EQ DSP Modules
+    using Filter = juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>>;
+    Filter lowEQ;
+    Filter midEQ;
+    Filter highEQ;
+    
     juce::Reverb reverb;
     juce::Reverb::Parameters reverbParams;
 

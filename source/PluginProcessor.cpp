@@ -13,8 +13,6 @@ HomeDistoAudioProcessor::HomeDistoAudioProcessor()
                        ), apvts(*this, nullptr, "Parameters", createParameters())
 #endif
 {
-    // WaveShaper for Distortion (Soft Clipping / Tanh)
-    driveShaper.functionToUse = [](float x) { return std::tanh(x); };
 }
 
 HomeDistoAudioProcessor::~HomeDistoAudioProcessor() {}
@@ -26,9 +24,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout HomeDistoAudioProcessor::cre
     // Distortion Engine
     params.push_back(std::make_unique<juce::AudioParameterFloat>("DRIVE", "Drive", 1.0f, 10.0f, 1.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("SHAPE", "Shape", 0.1f, 1.0f, 0.5f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("LOW", "Low", 20.0f, 20000.0f, 250.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("MID", "Mid", 20.0f, 20000.0f, 1000.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("HIGH", "High", 20.0f, 20000.0f, 4000.0f));
+    
+    // FIXED: Changed to Gain ranges (-15dB to +15dB) for a proper 3-band EQ
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("LOW", "Low", -15.0f, 15.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("MID", "Mid", -15.0f, 15.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("HIGH", "High", -15.0f, 15.0f, 0.0f));
     
     // Domestic Color
     params.push_back(std::make_unique<juce::AudioParameterFloat>("REVERB", "Reverb", 0.0f, 1.0f, 0.2f));
@@ -48,13 +48,9 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     spec.maximumBlockSize = samplesPerBlock;
     spec.numChannels = getTotalNumOutputChannels();
 
-    driveShaper.prepare(spec);
-    lowPass.prepare(spec);
-    lowPass.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
-    highPass.prepare(spec);
-    highPass.setType(juce::dsp::StateVariableTPTFilterType::highpass);
-    bandPass.prepare(spec);
-    bandPass.setType(juce::dsp::StateVariableTPTFilterType::bandpass);
+    lowEQ.prepare(spec);
+    midEQ.prepare(spec);
+    highEQ.prepare(spec);
     
     reverb.setSampleRate(sampleRate);
 }
@@ -78,15 +74,23 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    // Get Parameters
+    // FIXED: We are now fetching ALL parameters from the UI!
     float drive = apvts.getRawParameterValue("DRIVE")->load();
-    float lowFreq = apvts.getRawParameterValue("LOW")->load();
+    float shape = apvts.getRawParameterValue("SHAPE")->load();
+    float lowDB = apvts.getRawParameterValue("LOW")->load();
+    float midDB = apvts.getRawParameterValue("MID")->load();
+    float highDB = apvts.getRawParameterValue("HIGH")->load();
+    float revAmount = apvts.getRawParameterValue("REVERB")->load();
+    float sat = apvts.getRawParameterValue("SAT")->load();
     float mix = apvts.getRawParameterValue("MIX")->load();
     float outVol = apvts.getRawParameterValue("OUT")->load();
-    float revAmount = apvts.getRawParameterValue("REVERB")->load();
 
-    // Update Filter and Reverb Settings
-    lowPass.setCutoffFrequency(lowFreq);
+    // Update EQ Coefficients
+    *lowEQ.state = *juce::dsp::IIR::Coefficients<float>::makeLowShelf(getSampleRate(), 250.0f, 0.707f, juce::Decibels::decibelsToGain(lowDB));
+    *midEQ.state = *juce::dsp::IIR::Coefficients<float>::makePeakFilter(getSampleRate(), 1000.0f, 0.707f, juce::Decibels::decibelsToGain(midDB));
+    *highEQ.state = *juce::dsp::IIR::Coefficients<float>::makeHighShelf(getSampleRate(), 4000.0f, 0.707f, juce::Decibels::decibelsToGain(highDB));
+
+    // Update Reverb Settings
     reverbParams.roomSize = revAmount;
     reverbParams.wetLevel = revAmount;
     reverbParams.dryLevel = 1.0f - (revAmount * 0.5f);
@@ -96,24 +100,38 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     juce::AudioBuffer<float> dryBuffer;
     dryBuffer.makeCopyOf(buffer);
 
-    juce::dsp::AudioBlock<float> block (buffer);
-    juce::dsp::ProcessContextReplacing<float> context (block);
-
-    // 1. Apply Drive
+    // 1. Apply Drive & Asymmetric Shape Distortion
     for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
         auto* channelData = buffer.getWritePointer(channel);
         for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
         {
-            channelData[sample] *= drive; 
+            float in = channelData[sample] * drive; 
+            
+            // The SHAPE slider now limits positive wave peaks to create asymmetry
+            if (in > 0.0f)
+                channelData[sample] = std::tanh(in) * shape;
+            else
+                channelData[sample] = std::tanh(in);
         }
     }
-    
-    // 2. WaveShaper Distortion
-    driveShaper.process(context);
 
-    // 3. Filters
-    lowPass.process(context);
+    // 2. Process 3-Band EQ
+    juce::dsp::AudioBlock<float> block (buffer);
+    juce::dsp::ProcessContextReplacing<float> context (block);
+    lowEQ.process(context);
+    midEQ.process(context);
+    highEQ.process(context);
+
+    // 3. Apply Saturation Color Stage
+    for (int channel = 0; channel < totalNumInputChannels; ++channel)
+    {
+        auto* channelData = buffer.getWritePointer(channel);
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        {
+            channelData[sample] = std::tanh(channelData[sample] * sat);
+        }
+    }
 
     // 4. Reverb Processing
     if (totalNumInputChannels == 1)
@@ -151,12 +169,7 @@ void HomeDistoAudioProcessor::setStateInformation (const void* data, int sizeInB
             apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
 }
 
-juce::AudioProcessorEditor* HomeDistoAudioProcessor::createEditor()
-{
-    return new HomeDistoAudioProcessorEditor (*this);
-}
-//==============================================================================
-// This creates new instances of the plugin.
+// Global filter entry point
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new HomeDistoAudioProcessor();
