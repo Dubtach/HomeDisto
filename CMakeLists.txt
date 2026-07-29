@@ -39,6 +39,9 @@ juce_add_plugin("${PROJECT_NAME}"
     PRODUCT_NAME "${PRODUCT_NAME}"
 )
 
+# --- FIX 1: Generate the JuceHeader.h file ---
+juce_generate_juce_header("${PROJECT_NAME}")
+
 # 4. Add your C++ source files (Adjust paths if yours differ)
 target_sources("${PROJECT_NAME}" PRIVATE
     source/PluginProcessor.cpp
@@ -49,6 +52,7 @@ target_sources("${PROJECT_NAME}" PRIVATE
 target_link_libraries("${PROJECT_NAME}" PRIVATE
     juce::juce_audio_utils
     juce::juce_audio_processors
+    juce::juce_dsp # --- FIX 2: Add the DSP module ---
 )
 
 # --- FIX: Disables VST2 parameter automation replacement check ---
