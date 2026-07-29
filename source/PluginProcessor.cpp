@@ -25,7 +25,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout HomeDistoAudioProcessor::cre
     params.push_back(std::make_unique<juce::AudioParameterFloat>("DRIVE", "Drive", 1.0f, 10.0f, 1.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("SHAPE", "Shape", 0.1f, 1.0f, 0.5f));
     
-    // FIXED: Changed to Gain ranges (-15dB to +15dB) for a proper 3-band EQ
+    // Changed to Gain ranges (-15dB to +15dB) for a proper 3-band EQ
     params.push_back(std::make_unique<juce::AudioParameterFloat>("LOW", "Low", -15.0f, 15.0f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("MID", "Mid", -15.0f, 15.0f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("HIGH", "High", -15.0f, 15.0f, 0.0f));
@@ -74,7 +74,6 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    // FIXED: We are now fetching ALL parameters from the UI!
     float drive = apvts.getRawParameterValue("DRIVE")->load();
     float shape = apvts.getRawParameterValue("SHAPE")->load();
     float lowDB = apvts.getRawParameterValue("LOW")->load();
@@ -108,7 +107,6 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         {
             float in = channelData[sample] * drive; 
             
-            // The SHAPE slider now limits positive wave peaks to create asymmetry
             if (in > 0.0f)
                 channelData[sample] = std::tanh(in) * shape;
             else
@@ -167,6 +165,12 @@ void HomeDistoAudioProcessor::setStateInformation (const void* data, int sizeInB
     if (xmlState.get() != nullptr)
         if (xmlState->hasTagName (apvts.state.getType()))
             apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
+}
+
+// FIXED: Added missing Editor Creation function
+juce::AudioProcessorEditor* HomeDistoAudioProcessor::createEditor()
+{
+    return new HomeDistoAudioProcessorEditor (*this);
 }
 
 // Global filter entry point

@@ -50,7 +50,7 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 
     // Header Title (Fills the empty space at the top)
     g.setColour(juce::Colour(0xFFFF9900));
-    g.setFont(juce::Font(22.0f, juce::Font::bold));
+    g.setFont(juce::FontOptions(22.0f).withStyle("Bold")); // FIXED: Resolved Font deprecation warning
     g.drawText("HOME DISTO", 0, 15, 800, 30, juce::Justification::centred);
 
     // Panels (Shifted up to Y=60 for better balance)
