@@ -35,6 +35,7 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
 
     autoToggle.setButtonText("AUTO");
     autoToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFFA855F7));
+    autoToggle.setColour(juce::ToggleButton::textColourId, juce::Colour(0xFF888888)); // Darkened to match UI labels
     addAndMakeVisible(autoToggle);
     autoAttach = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "AUTO", autoToggle);
 
@@ -102,9 +103,10 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 
     g.setColour(juce::Colours::white);
     g.setFont(juce::FontOptions(22.0f).withName("Helvetica").withStyle("Bold"));
-    g.drawText("Home:", 25, 20, 80, 30, juce::Justification::centredLeft);
+    // Fixed capitalization and even spacing for title
+    g.drawText("HOME :", 25, 20, 80, 30, juce::Justification::centredLeft);
     g.setColour(juce::Colour(0xFFA855F7));
-    g.drawText("Disto", 85, 20, 80, 30, juce::Justification::centredLeft);
+    g.drawText("DISTO", 105, 20, 80, 30, juce::Justification::centredLeft);
 
     g.setColour(juce::Colour(0xFF202024));
     g.drawLine(25, 65, 695, 65, 2.0f);
@@ -179,7 +181,8 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour(juce::Colour(0xFF888888));
     g.setFont(juce::FontOptions(13.0f).withName("Helvetica").withStyle("Bold"));
     g.drawText("OUTPUT", 545, 90, 70, 20, juce::Justification::left);
-    g.drawText("MIX", 580, 275, 70, 20, juce::Justification::centred);
+    // Moved Y coordinate from 275 to 260 to align with TONE/PUNCH
+    g.drawText("MIX", 580, 260, 70, 20, juce::Justification::centred);
 
     // Mix Descriptors
     g.setFont(juce::FontOptions(9.0f).withName("Helvetica").withStyle("Bold"));
