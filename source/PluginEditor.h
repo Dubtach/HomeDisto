@@ -2,19 +2,19 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
-// Rich Tactile LookAndFeel with Depth & Shading
+// Rich Tactile LookAndFeel with Depth & Shading[cite: 11]
 class FlatGodLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
     FlatGodLookAndFeel()
     {
-        setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xFFA855F7)); 
+        setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xFFFFFFFF)); 
         setColour(juce::Slider::trackColourId, juce::Colour(0xFF1A1A20));
         
         setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xFF161618));
         setColour(juce::ComboBox::outlineColourId, juce::Colour(0xFF2A2A30));
         setColour(juce::ComboBox::textColourId, juce::Colours::white);
-        setColour(juce::ComboBox::arrowColourId, juce::Colour(0xFFA855F7));
+        setColour(juce::ComboBox::arrowColourId, juce::Colour(0xFFFFFFFF));
     }
 
     void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height, 
@@ -26,10 +26,10 @@ public:
         auto centreY = (float) y + (float) height * 0.5f;
         auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
 
-        // 1. Knob Drop Shadow
+        // 1. Knob Drop Shadow[cite: 11]
         for (int i = 1; i <= 4; ++i)
         {
-            g.setColour(juce::Colours::black.withAlpha(0.12f * (5 - i)));
+            g.setColour(juce::Colours::black.withAlpha(0.15f * (5 - i)));
             g.fillEllipse(centreX - radius - i, centreY - radius + (i * 0.8f), radius * 2.0f + (i * 2), radius * 2.0f + (i * 2));
         }
 
@@ -50,24 +50,24 @@ public:
         g.setColour(juce::Colours::white.withAlpha(0.12f));
         g.drawEllipse(centreX - capRadius, centreY - capRadius, capRadius * 2, capRadius * 2, 1.0f);
 
-        // 4. Track Arc
+        // 4. Track Arc[cite: 11]
         juce::Path trackArc;
         trackArc.addCentredArc(centreX, centreY, radius + 2.5f, radius + 2.5f, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
-        g.setColour(findColour(juce::Slider::trackColourId));
+        g.setColour(findColour(juce::Slider::trackColourId).withAlpha(0.5f));
         g.strokePath(trackArc, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        // 5. Active Fill Arc (Glowing Accent)
+        // 5. Active Fill Arc (Glowing Accent)[cite: 11]
         juce::Path fillArc;
         fillArc.addCentredArc(centreX, centreY, radius + 2.5f, radius + 2.5f, 0.0f, rotaryStartAngle, angle, true);
-        g.setColour(findColour(juce::Slider::rotarySliderFillColourId));
+        g.setColour(findColour(juce::Slider::rotarySliderFillColourId).withAlpha(0.8f));
         g.strokePath(fillArc, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        // 6. Indicator Line with Glow
+        // 6. Indicator Line with Glow[cite: 11]
         juce::Path p;
         p.addRoundedRectangle(-1.5f, -capRadius + 4.0f, 3.0f, capRadius * 0.55f, 1.0f);
         p.applyTransform(juce::AffineTransform::rotation(angle).translated(centreX, centreY));
         
-        g.setColour(juce::Colour(0xFFA855F7));
+        g.setColour(juce::Colours::white);
         g.fillPath(p);
     }
 
@@ -109,22 +109,22 @@ public:
 
         if (button.getToggleState())
         {
-            juce::ColourGradient btnGrad(juce::Colour(0xFF2A2A32), 0, 0, juce::Colour(0xFF1A1A20), 0, bounds.getHeight(), false);
+            juce::ColourGradient btnGrad(juce::Colour(0xFF2A2A32).withAlpha(0.5f), 0, 0, juce::Colour(0xFF1A1A20).withAlpha(0.5f), 0, bounds.getHeight(), false);
             g.setGradientFill(btnGrad);
             g.fillRoundedRectangle(bounds, 4.0f);
             
-            g.setColour(juce::Colour(0xFFA855F7));
+            g.setColour(juce::Colours::white);
             g.fillRoundedRectangle(0, 0, 4.0f, bounds.getHeight(), 2.0f);
             g.drawRoundedRectangle(bounds, 4.0f, 1.0f);
         }
         else if (shouldDrawButtonAsHighlighted)
         {
-            g.setColour(juce::Colour(0xFF222228));
+            g.setColour(juce::Colour(0xFF222228).withAlpha(0.3f));
             g.fillRoundedRectangle(bounds, 4.0f);
         }
         else
         {
-            g.setColour(juce::Colour(0xFF121215).withAlpha(0.6f));
+            g.setColour(juce::Colour(0xFF121215).withAlpha(0.4f));
             g.fillRoundedRectangle(bounds, 4.0f);
         }
     }
@@ -134,7 +134,7 @@ public:
         if (button.getName() == "SAVE" || button.getName() == "SETTINGS") return; 
         
         g.setFont(juce::FontOptions(11.0f).withName("Helvetica").withStyle(button.getToggleState() ? "Bold" : "Plain"));
-        g.setColour(button.getToggleState() ? juce::Colours::white : juce::Colour(0xFFB0B0B8));
+        g.setColour(button.getToggleState() ? juce::Colours::white : juce::Colours::white.withAlpha(0.6f));
         g.drawText(button.getButtonText(), button.getLocalBounds(), juce::Justification::centred);
     }
 
@@ -142,7 +142,7 @@ public:
                            float sliderPos, float minSliderPos, float maxSliderPos,
                            const juce::Slider::SliderStyle style, juce::Slider& slider) override
     {
-        // Track line
+        // Track line[cite: 11]
         g.setColour(juce::Colours::black.withAlpha(0.5f));
         g.fillRect((float)x, (float)y + (float)height * 0.5f - 1.0f, (float)width, 2.0f);
 
@@ -150,7 +150,7 @@ public:
         g.setColour(juce::Colours::black.withAlpha(0.4f));
         g.fillEllipse(sliderPos - 6.0f, (float)y + (float)height * 0.5f - 4.0f, 12.0f, 12.0f);
 
-        g.setColour(juce::Colour(0xFFA855F7));
+        g.setColour(juce::Colours::white);
         g.fillEllipse(sliderPos - 5.0f, (float)y + (float)height * 0.5f - 5.0f, 10.0f, 10.0f);
         
         g.setColour(juce::Colours::white);
@@ -173,7 +173,7 @@ private:
     HomeDistoAudioProcessor& audioProcessor;
     FlatGodLookAndFeel flatLaf;
 
-    // Header UI
+    // Header UI[cite: 11]
     juce::ComboBox presetCombo;
     juce::TextButton saveButton;
     juce::TextButton settingsButton;
@@ -186,7 +186,7 @@ private:
     juce::Slider mixKnob;
     juce::ToggleButton autoToggle;
     
-    // Mode List 
+    // Mode List[cite: 11]
     juce::TextButton modeButtons[6];
     juce::StringArray modeNames = { "PUNCH", "TUBE", "TAPE", "DIGITAL", "CRUNCH", "FUZZ" };
     
