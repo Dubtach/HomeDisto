@@ -34,8 +34,8 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     setupKnob(mixKnob, "MIX", mixAttach);
 
     autoToggle.setButtonText("AUTO");
-    autoToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFFFFFFFF));
-    autoToggle.setColour(juce::ToggleButton::textColourId, juce::Colour(0xFF888888)); 
+    autoToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFF111114));
+    autoToggle.setColour(juce::ToggleButton::textColourId, juce::Colour(0xFF111114)); // Changed to dark for contrast on bright background[cite: 3]
     addAndMakeVisible(autoToggle);
     autoAttach = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "AUTO", autoToggle);
 
@@ -91,38 +91,30 @@ juce::String HomeDistoAudioProcessorEditor::getFrequencyString(float hz)
     return juce::String(juce::roundToInt(hz)) + " Hz";
 }
 
-// Helper to render rich shaded cards with soft drop shadows, diagonal line texture, and inner bevels
-void HomeDistoAudioProcessorEditor::drawShadedCard(juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour baseColour)
+// Flat 2D renderer with optional premium texture[cite: 3]
+void HomeDistoAudioProcessorEditor::drawFlatCard(juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour baseColour, bool addTexture)
 {
-    // 1. Soft Outer Drop Shadows[cite: 21]
-    for (int i = 1; i <= 6; ++i)
-    {
-        g.setColour(juce::Colours::black.withAlpha(0.06f * (7 - i)));
-        g.fillRoundedRectangle(bounds.expanded((float)i * 0.8f).translated(0.0f, 1.5f + i * 0.5f), 10.0f);
-    }
-
-    // 2. Rich Vertical Gradient (Shaded from light top to dark base)
-    juce::ColourGradient grad(baseColour.brighter(0.15f), bounds.getX(), bounds.getY(),
-                               baseColour.darker(0.35f), bounds.getX(), bounds.getBottom(), false);
-    g.setGradientFill(grad);
+    // 1. Solid Flat Background
+    g.setColour(baseColour);
     g.fillRoundedRectangle(bounds, 8.0f);
 
-    // 3. Premium Texture Overlay (Subtle Diagonal Lines)
-    g.saveState();
-    g.reduceClipRegion(bounds.toNearestInt());
-    g.setColour(juce::Colours::black.withAlpha(0.06f));
-    for (float i = -bounds.getHeight(); i < bounds.getWidth() + bounds.getHeight(); i += 6.0f)
+    // 2. Premium Texture Overlay (Subtle dot matrix)
+    if (addTexture)
     {
-        g.drawLine(bounds.getX() + i, bounds.getY(), bounds.getX() + i - bounds.getHeight(), bounds.getBottom(), 1.5f);
+        g.saveState();
+        g.reduceClipRegion(bounds.toNearestInt());
+        g.setColour(juce::Colours::white.withAlpha(0.25f));
+        
+        for (int x = (int)bounds.getX(); x < bounds.getRight(); x += 4) {
+            for (int y = (int)bounds.getY(); y < bounds.getBottom(); y += 4) {
+                g.fillRect(x, y, 1, 1);
+            }
+        }
+        g.restoreState();
     }
-    g.restoreState();
 
-    // 4. Subtle Inner Highlight Line (Top Bevel)[cite: 21]
-    g.setColour(juce::Colours::white.withAlpha(0.20f));
-    g.drawRoundedRectangle(bounds.reduced(0.5f), 8.0f, 1.0f);
-
-    // 5. Dark Outer Border Line
-    g.setColour(juce::Colours::black.withAlpha(0.40f));
+    // 3. Crisp Flat Border
+    g.setColour(juce::Colours::black.withAlpha(0.20f));
     g.drawRoundedRectangle(bounds, 8.0f, 1.5f);
 }
 
@@ -149,20 +141,20 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawLine(25, 65, 695, 65, 2.0f); 
 
     // ==========================================
-    // DISTINCT SHADED CARDS WITH HARMONIZED DARK/ACCENT HEX COLORS
+    // DISTINCT FLAT CARDS WITH VIBRANT HEX COLORS
     // ==========================================
     
-    // Card 1: MODES Section (Deep Slate Blue)
-    drawShadedCard(g, juce::Rectangle<float>(20, 80, 230, 175), juce::Colour(0xFF151821));
+    // Card 1: MODES Section (Vibrant Mint, Textured)[cite: 3]
+    drawFlatCard(g, juce::Rectangle<float>(20, 80, 230, 175), juce::Colour(0xFF64FFDA), true);
 
-    // Card 2: FILTER Section (Warm Amber/Gold - Left untouched per instructions)[cite: 21]
-    drawShadedCard(g, juce::Rectangle<float>(20, 265, 230, 125), juce::Colour(0xFFFFC107));
+    // Card 2: FILTER Section (Warm Amber/Gold, Untextured to keep original feel)[cite: 3]
+    drawFlatCard(g, juce::Rectangle<float>(20, 265, 230, 125), juce::Colour(0xFFFFC107), false);
 
-    // Card 3: DRIVE / TONE / PUNCH Section (Deep Graphite)
-    drawShadedCard(g, juce::Rectangle<float>(260, 80, 260, 310), juce::Colour(0xFF1E1E22));
+    // Card 3: DRIVE / TONE / PUNCH Section (Vibrant Coral/Peach, Textured)[cite: 3]
+    drawFlatCard(g, juce::Rectangle<float>(260, 80, 260, 310), juce::Colour(0xFFFF9EA6), true);
 
-    // Card 4: OUTPUT / MIX Section (Deep Burgundy)
-    drawShadedCard(g, juce::Rectangle<float>(530, 80, 170, 310), juce::Colour(0xFF261418));
+    // Card 4: OUTPUT / MIX Section (Vibrant Periwinkle, Textured)[cite: 3]
+    drawFlatCard(g, juce::Rectangle<float>(530, 80, 170, 310), juce::Colour(0xFFA3B8FF), true);
 
 
     // ==========================================
@@ -171,12 +163,10 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont(juce::FontOptions(13.0f).withName("Helvetica").withStyle("Bold"));
 
     // --- CARD 1: MODES ---
-    // High-contrast off-white text for dark slate background
-    g.setColour(juce::Colour(0xFFE5E5EA));
+    g.setColour(juce::Colour(0xFF111114)); // Dark text for bright background[cite: 3]
     g.drawText("MODE", 20, 90, 230, 20, juce::Justification::centred);
 
-    // --- CARD 2: FILTER ---
-    // Keeping dark text specifically for the bright Amber #FFC107 card background[cite: 21]
+    // --- CARD 2: FILTER --- (Untouched styling)
     g.setColour(juce::Colour(0xFF2A1C00)); 
     g.drawText("FILTER", 20, 273, 230, 20, juce::Justification::centred);
 
@@ -207,15 +197,14 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 
     // --- CARD 3: DRIVE, TONE, PUNCH ---
     g.setFont(juce::FontOptions(13.0f).withName("Helvetica").withStyle("Bold"));
-    // High-contrast off-white text for dark graphite background
-    g.setColour(juce::Colour(0xFFE5E5EA));
+    g.setColour(juce::Colour(0xFF111114)); // Dark text for bright background[cite: 3]
     g.drawText("DRIVE", 260, 90, 260, 20, juce::Justification::centred); 
     g.drawText("TONE", 285, 260, 80, 20, juce::Justification::centred);
     g.drawText("PUNCH", 415, 260, 80, 20, juce::Justification::centred);
 
     // Descriptors
     g.setFont(juce::FontOptions(9.0f).withName("Helvetica").withStyle("Bold"));
-    g.setColour(juce::Colour(0xFFA5A5B0));
+    g.setColour(juce::Colour(0xFF111114).withAlpha(0.6f)); // Dark faded text[cite: 3]
     g.drawText("DARK",  275, 360, 40, 15, juce::Justification::left);
     g.drawText("BRIGHT", 335, 360, 40, 15, juce::Justification::right);
     g.drawText("SOFT",  405, 360, 40, 15, juce::Justification::left);
@@ -223,14 +212,13 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 
     // --- CARD 4: OUTPUT, MIX ---
     g.setFont(juce::FontOptions(13.0f).withName("Helvetica").withStyle("Bold"));
-    // High-contrast off-white text for deep burgundy background
-    g.setColour(juce::Colour(0xFFE5E5EA));
+    g.setColour(juce::Colour(0xFF111114)); // Dark text for bright background[cite: 3]
     g.drawText("OUTPUT", 545, 90, 70, 20, juce::Justification::left);
     g.drawText("MIX", 580, 260, 70, 20, juce::Justification::centred); 
 
     // Descriptors
     g.setFont(juce::FontOptions(9.0f).withName("Helvetica").withStyle("Bold"));
-    g.setColour(juce::Colour(0xFFA5A5B0));
+    g.setColour(juce::Colour(0xFF111114).withAlpha(0.6f)); // Dark faded text[cite: 3]
     g.drawText("DRY", 565, 360, 30, 15, juce::Justification::left);
     g.drawText("WET", 635, 360, 30, 15, juce::Justification::right);
 }

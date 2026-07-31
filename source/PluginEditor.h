@@ -2,14 +2,14 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
-// Rich Tactile LookAndFeel with Depth, Shading, and Metallic Accents
+// Flat Tactile LookAndFeel[cite: 4]
 class FlatGodLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
     FlatGodLookAndFeel()
     {
-        setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xFFFFC107)); // Matching Amber fill
-        setColour(juce::Slider::trackColourId, juce::Colour(0xFF0C0C0F));
+        setColour(juce::Slider::rotarySliderFillColourId, juce::Colours::white); 
+        setColour(juce::Slider::trackColourId, juce::Colour(0x40000000)); // Semi-transparent dark track
         
         setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xFF161618));
         setColour(juce::ComboBox::outlineColourId, juce::Colour(0xFF2A2A30));
@@ -21,58 +21,35 @@ public:
                            float sliderPos, const float rotaryStartAngle, 
                            const float rotaryEndAngle, juce::Slider&) override
     {
-        auto radius = (float) juce::jmin (width / 2, height / 2) - 6.0f;
+        auto radius = (float) juce::jmin (width / 2, height / 2) - 4.0f;
         auto centreX = (float) x + (float) width  * 0.5f;
         auto centreY = (float) y + (float) height * 0.5f;
         auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
 
-        // 1. Knob Drop Shadow[cite: 22]
-        for (int i = 1; i <= 4; ++i)
-        {
-            g.setColour(juce::Colours::black.withAlpha(0.15f * (5 - i)));
-            g.fillEllipse(centreX - radius - i, centreY - radius + (i * 0.8f), radius * 2.0f + (i * 2), radius * 2.0f + (i * 2));
-        }
-
-        // 2. Outer Bevel Ring (3D Gradient)
-        juce::ColourGradient ringGrad(juce::Colour(0xFF383842), centreX, centreY - radius,
-                                       juce::Colour(0xFF121216), centreX, centreY + radius, false);
-        g.setGradientFill(ringGrad);
+        // 1. Flat Dark Knob Base[cite: 4]
+        g.setColour(juce::Colour(0xFF1E1E24));
         g.fillEllipse(centreX - radius, centreY - radius, radius * 2, radius * 2);
 
-        // 3. Shaded Knob Cap
-        auto capRadius = radius * 0.82f;
-        juce::ColourGradient capGrad(juce::Colour(0xFF3A3A44), centreX, centreY - capRadius,
-                                      juce::Colour(0xFF15151A), centreX, centreY + capRadius, false);
-        g.setGradientFill(capGrad);
-        g.fillEllipse(centreX - capRadius, centreY - capRadius, capRadius * 2, capRadius * 2);
-        
-        // Metallic Concentric Texture Rings
-        g.setColour(juce::Colours::black.withAlpha(0.5f));
-        g.drawEllipse(centreX - capRadius * 0.65f, centreY - capRadius * 0.65f, capRadius * 1.3f, capRadius * 1.3f, 1.2f);
-        g.setColour(juce::Colours::white.withAlpha(0.08f));
-        g.drawEllipse(centreX - capRadius * 0.35f, centreY - capRadius * 0.35f, capRadius * 0.7f, capRadius * 0.7f, 1.0f);
+        // Flat outline for contrast[cite: 4]
+        g.setColour(juce::Colours::black.withAlpha(0.2f));
+        g.drawEllipse(centreX - radius, centreY - radius, radius * 2, radius * 2, 1.5f);
 
-        // Highlight ring on cap edge
-        g.setColour(juce::Colours::white.withAlpha(0.12f));
-        g.drawEllipse(centreX - capRadius, centreY - capRadius, capRadius * 2, capRadius * 2, 1.0f);
-
-        // 4. Track Arc
+        // 2. Track Arc (Flat)[cite: 4]
         juce::Path trackArc;
-        trackArc.addCentredArc(centreX, centreY, radius + 2.5f, radius + 2.5f, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
-        g.setColour(findColour(juce::Slider::trackColourId).withAlpha(0.7f));
-        g.strokePath(trackArc, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        trackArc.addCentredArc(centreX, centreY, radius - 6.0f, radius - 6.0f, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
+        g.setColour(findColour(juce::Slider::trackColourId));
+        g.strokePath(trackArc, juce::PathStrokeType(3.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        // 5. Active Fill Arc (Glowing Accent)[cite: 22]
+        // 3. Active Fill Arc (Flat)[cite: 4]
         juce::Path fillArc;
-        fillArc.addCentredArc(centreX, centreY, radius + 2.5f, radius + 2.5f, 0.0f, rotaryStartAngle, angle, true);
-        g.setColour(findColour(juce::Slider::rotarySliderFillColourId).withAlpha(0.9f));
-        g.strokePath(fillArc, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        fillArc.addCentredArc(centreX, centreY, radius - 6.0f, radius - 6.0f, 0.0f, rotaryStartAngle, angle, true);
+        g.setColour(findColour(juce::Slider::rotarySliderFillColourId));
+        g.strokePath(fillArc, juce::PathStrokeType(3.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        // 6. Indicator Line with Glow[cite: 22]
+        // 4. Indicator Line (Flat)[cite: 4]
         juce::Path p;
-        p.addRoundedRectangle(-1.5f, -capRadius + 4.0f, 3.0f, capRadius * 0.55f, 1.0f);
+        p.addRoundedRectangle(-1.5f, -radius + 4.0f, 3.0f, radius * 0.4f, 1.0f);
         p.applyTransform(juce::AffineTransform::rotation(angle).translated(centreX, centreY));
-        
         g.setColour(juce::Colours::white);
         g.fillPath(p);
     }
@@ -113,25 +90,27 @@ public:
             return;
         }
 
+        // Flat high-contrast dark buttons for bright backgrounds[cite: 4]
         if (button.getToggleState())
         {
-            juce::ColourGradient btnGrad(juce::Colour(0xFF3A3A45).withAlpha(0.6f), 0, 0, juce::Colour(0xFF1F1F26).withAlpha(0.6f), 0, bounds.getHeight(), false);
-            g.setGradientFill(btnGrad);
+            g.setColour(juce::Colour(0xFF111114));
             g.fillRoundedRectangle(bounds, 4.0f);
             
-            g.setColour(juce::Colour(0xFFFFC107)); // Amber active accent border
+            g.setColour(juce::Colours::white);
             g.fillRoundedRectangle(0, 0, 4.0f, bounds.getHeight(), 2.0f);
-            g.drawRoundedRectangle(bounds, 4.0f, 1.0f);
+            g.drawRoundedRectangle(bounds, 4.0f, 1.5f);
         }
         else if (shouldDrawButtonAsHighlighted)
         {
-            g.setColour(juce::Colour(0xFF222228).withAlpha(0.3f));
+            g.setColour(juce::Colour(0xFF2A2A30));
             g.fillRoundedRectangle(bounds, 4.0f);
         }
         else
         {
-            g.setColour(juce::Colour(0xFF121215).withAlpha(0.4f));
+            g.setColour(juce::Colour(0xFF1E1E24));
             g.fillRoundedRectangle(bounds, 4.0f);
+            g.setColour(juce::Colours::black.withAlpha(0.2f));
+            g.drawRoundedRectangle(bounds, 4.0f, 1.5f);
         }
     }
 
@@ -140,7 +119,7 @@ public:
         if (button.getName() == "SAVE" || button.getName() == "SETTINGS") return; 
         
         g.setFont(juce::FontOptions(11.0f).withName("Helvetica").withStyle(button.getToggleState() ? "Bold" : "Plain"));
-        g.setColour(button.getToggleState() ? juce::Colours::white : juce::Colours::white.withAlpha(0.6f));
+        g.setColour(button.getToggleState() ? juce::Colours::white : juce::Colours::white.withAlpha(0.7f));
         g.drawText(button.getButtonText(), button.getLocalBounds(), juce::Justification::centred);
     }
 
@@ -148,19 +127,16 @@ public:
                            float sliderPos, float minSliderPos, float maxSliderPos,
                            const juce::Slider::SliderStyle style, juce::Slider& slider) override
     {
-        // Track line[cite: 22]
-        g.setColour(juce::Colours::black.withAlpha(0.5f));
-        g.fillRect((float)x, (float)y + (float)height * 0.5f - 1.0f, (float)width, 2.0f);
-
-        // Thumb Shadow & Glow[cite: 22]
+        // Flat Track line[cite: 4]
         g.setColour(juce::Colours::black.withAlpha(0.4f));
-        g.fillEllipse(sliderPos - 6.0f, (float)y + (float)height * 0.5f - 4.0f, 12.0f, 12.0f);
+        g.fillRect((float)x, (float)y + (float)height * 0.5f - 1.5f, (float)width, 3.0f);
 
-        g.setColour(juce::Colours::white);
-        g.fillEllipse(sliderPos - 5.0f, (float)y + (float)height * 0.5f - 5.0f, 10.0f, 10.0f);
+        // Flat Thumb[cite: 4]
+        g.setColour(juce::Colour(0xFF1E1E24));
+        g.fillEllipse(sliderPos - 6.0f, (float)y + (float)height * 0.5f - 6.0f, 12.0f, 12.0f);
         
         g.setColour(juce::Colours::white);
-        g.drawEllipse(sliderPos - 5.0f, (float)y + (float)height * 0.5f - 5.0f, 10.0f, 10.0f, 1.2f);
+        g.drawEllipse(sliderPos - 6.0f, (float)y + (float)height * 0.5f - 6.0f, 12.0f, 12.0f, 2.0f);
     }
 };
 
@@ -179,12 +155,10 @@ private:
     HomeDistoAudioProcessor& audioProcessor;
     FlatGodLookAndFeel flatLaf;
 
-    // Header UI
     juce::ComboBox presetCombo;
     juce::TextButton saveButton;
     juce::TextButton settingsButton;
 
-    // Main Knobs
     juce::Slider driveKnob;
     juce::Slider outputKnob; 
     juce::Slider toneKnob;
@@ -192,11 +166,9 @@ private:
     juce::Slider mixKnob;
     juce::ToggleButton autoToggle;
     
-    // Mode List
     juce::TextButton modeButtons[6];
     juce::StringArray modeNames = { "PUNCH", "TUBE", "TAPE", "DIGITAL", "CRUNCH", "FUZZ" };
     
-    // Filter Sliders
     juce::Slider lowCutSlider;
     juce::Slider highCutSlider;
 
@@ -208,7 +180,7 @@ private:
     std::unique_ptr<ButtonAttachment> autoAttach;
 
     juce::String getFrequencyString(float hz);
-    void drawShadedCard(juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour baseColour);
+    void drawFlatCard(juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour baseColour, bool addTexture); // Renamed and refactored[cite: 4]
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HomeDistoAudioProcessorEditor)
 };
