@@ -35,11 +35,10 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
 
     autoToggle.setButtonText("AUTO");
     autoToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFFA855F7));
-    autoToggle.setColour(juce::ToggleButton::textColourId, juce::Colour(0xFF888888)); // Darkened to match UI labels
+    autoToggle.setColour(juce::ToggleButton::textColourId, juce::Colour(0xFF888888)); // Darkened label color
     addAndMakeVisible(autoToggle);
     autoAttach = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "AUTO", autoToggle);
 
-    // Loop through 6 modes 
     for (int i = 0; i < 6; ++i)
     {
         modeButtons[i].setButtonText(modeNames[i]);
@@ -92,52 +91,85 @@ juce::String HomeDistoAudioProcessorEditor::getFrequencyString(float hz)
     return juce::String(juce::roundToInt(hz)) + " Hz";
 }
 
+// Helper to render rich shaded cards with soft drop shadows and inner bevels
+void HomeDistoAudioProcessorEditor::drawShadedCard(juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour baseColour)
+{
+    // 1. Soft Outer Drop Shadows
+    for (int i = 1; i <= 5; ++i)
+    {
+        g.setColour(juce::Colours::black.withAlpha(0.07f * (6 - i)));
+        g.fillRoundedRectangle(bounds.expanded((float)i * 0.8f).translated(0.0f, 1.5f + i * 0.5f), 10.0f);
+    }
+
+    // 2. Rich Vertical Gradient (Shaded from light top to dark base)
+    juce::ColourGradient grad(baseColour.brighter(0.12f), bounds.getX(), bounds.getY(),
+                               baseColour.darker(0.35f), bounds.getX(), bounds.getBottom(), false);
+    g.setGradientFill(grad);
+    g.fillRoundedRectangle(bounds, 8.0f);
+
+    // 3. Subtle Inner Highlight Line (Top Bevel)
+    g.setColour(juce::Colours::white.withAlpha(0.15f));
+    g.drawRoundedRectangle(bounds.reduced(0.5f), 8.0f, 1.0f);
+
+    // 4. Dark Outer Border Line
+    g.setColour(juce::Colours::black.withAlpha(0.40f));
+    g.drawRoundedRectangle(bounds, 8.0f, 1.5f);
+}
+
 void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour(0xFF0C0C0E)); 
+    // Deep dark chassis background
+    g.fillAll (juce::Colour(0xFF09090B)); 
 
-    g.setColour(juce::Colour(0xFF121214));
+    // Main Housing Panel
+    g.setColour(juce::Colour(0xFF111114));
     g.fillRoundedRectangle(10, 10, 700, 390, 8);
-    g.setColour(juce::Colour(0xFF1C1C20));
+    g.setColour(juce::Colour(0xFF222228));
     g.drawRoundedRectangle(10, 10, 700, 390, 8, 1.5f);
 
+    // Title Block (Capitalized and Evenly Spaced)
     g.setColour(juce::Colours::white);
     g.setFont(juce::FontOptions(22.0f).withName("Helvetica").withStyle("Bold"));
-    // Fixed capitalization and even spacing for title
     g.drawText("HOME :", 25, 20, 80, 30, juce::Justification::centredLeft);
     g.setColour(juce::Colour(0xFFA855F7));
     g.drawText("DISTO", 105, 20, 80, 30, juce::Justification::centredLeft);
 
-    g.setColour(juce::Colour(0xFF202024));
+    // Divider Line
+    g.setColour(juce::Colour(0xFF1E1E24));
     g.drawLine(25, 65, 695, 65, 2.0f);
 
     // ==========================================
-    // ASYMMETRIC COLUMN PANELS
+    // DISTINCT SHADED CARDS WITH CUSTOM HEX COLORS
     // ==========================================
-    int colY = 80;
-    int colHeight = 310;
     
-    // Panel Backgrounds
-    g.setColour(juce::Colour(0xFF18181A)); 
-    g.fillRoundedRectangle(20,  colY, 230, colHeight, 8); // Col 1: Modes (60%) & Filter (40%)
-    g.fillRoundedRectangle(260, colY, 260, colHeight, 8); // Col 2: Drive, Tone, Punch (Widest)
-    g.fillRoundedRectangle(530, colY, 170, colHeight, 8); // Col 3: Thinner Output/Mix
+    // Card 1: MODES Section (#347433 - Rich Green)
+    drawShadedCard(g, juce::Rectangle<float>(20, 80, 230, 175), juce::Colour(0xFF347433));
 
-    g.setColour(juce::Colour(0xFF888888));
+    // Card 2: FILTER Section (#FFC107 - Warm Amber/Gold)
+    drawShadedCard(g, juce::Rectangle<float>(20, 265, 230, 125), juce::Colour(0xFF8A6800));
+
+    // Card 3: DRIVE / TONE / PUNCH Section (#FF6F3C - Burnt Orange)
+    drawShadedCard(g, juce::Rectangle<float>(260, 80, 260, 310), juce::Colour(0xFFB84A22));
+
+    // Card 4: OUTPUT / MIX Section (#B22222 - Firebrick Red)
+    drawShadedCard(g, juce::Rectangle<float>(530, 80, 170, 310), juce::Colour(0xFF801818));
+
+
+    // ==========================================
+    // TEXT LABELS & OVERLAYS
+    // ==========================================
     g.setFont(juce::FontOptions(13.0f).withName("Helvetica").withStyle("Bold"));
 
-    // --- COLUMN 1: MODES & FILTER (60/40 Split) ---
+    // --- CARD 1: MODES ---
+    g.setColour(juce::Colours::white.withAlpha(0.9f));
     g.drawText("MODE", 20, 90, 230, 20, juce::Justification::centred);
-    
-    // 60% Divider
-    g.setColour(juce::Colour(0xFF202024));
-    g.drawLine(35, 265, 235, 265, 1.5f); 
-    
-    g.setColour(juce::Colour(0xFF888888));
-    g.drawText("FILTER", 20, 275, 230, 20, juce::Justification::centred);
+
+    // --- CARD 2: FILTER ---
+    g.setColour(juce::Colours::white.withAlpha(0.9f));
+    g.drawText("FILTER", 20, 273, 230, 20, juce::Justification::centred);
 
     g.setFont(juce::FontOptions(10.0f).withName("Helvetica").withStyle("Bold"));
-    g.setColour(juce::Colour(0xFFA855F7));
+    g.setColour(juce::Colour(0xFFFFE082)); // Warm amber highlight
     g.drawText("LOW CUT", 35, 295, 80, 15, juce::Justification::left);
     g.drawText("HIGH CUT", 155, 295, 80, 15, juce::Justification::right);
     g.setColour(juce::Colours::white);
@@ -149,9 +181,9 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     float lowX = lowCutSlider.getX() + (lowProp * lowCutSlider.getWidth());
     float highProp = highCutSlider.valueToProportionOfLength(highCutSlider.getValue());
     float highX = highCutSlider.getX() + (highProp * highCutSlider.getWidth());
-    float graphY = 340.0f;
+    float graphY = 345.0f;
 
-    g.setColour(juce::Colour(0xFF2A2A30));
+    g.setColour(juce::Colours::black.withAlpha(0.35f));
     g.drawLine(35, graphY, 235, graphY, 2.0f); 
 
     juce::Path filterCurve;
@@ -159,34 +191,33 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     filterCurve.cubicTo(lowX - 6, 375, lowX - 6, graphY, lowX, graphY);
     filterCurve.lineTo(highX, graphY);
     filterCurve.cubicTo(highX + 6, graphY, highX + 6, 375, 235, 375);
-    g.setColour(juce::Colour(0xFFA855F7));
+    g.setColour(juce::Colour(0xFFFFC107));
     g.strokePath(filterCurve, juce::PathStrokeType(2.0f));
 
-    // --- COLUMN 2: DRIVE, TONE, PUNCH ---
-    g.setColour(juce::Colour(0xFF888888));
+    // --- CARD 3: DRIVE, TONE, PUNCH ---
     g.setFont(juce::FontOptions(13.0f).withName("Helvetica").withStyle("Bold"));
+    g.setColour(juce::Colours::white.withAlpha(0.9f));
     g.drawText("DRIVE", 260, 90, 260, 20, juce::Justification::centred);
     g.drawText("TONE", 285, 260, 80, 20, juce::Justification::centred);
     g.drawText("PUNCH", 415, 260, 80, 20, juce::Justification::centred);
 
-    // Tone & Punch Descriptors
+    // Descriptors
     g.setFont(juce::FontOptions(9.0f).withName("Helvetica").withStyle("Bold"));
-    g.setColour(juce::Colour(0xFF55555D));
+    g.setColour(juce::Colours::white.withAlpha(0.6f));
     g.drawText("DARK",  275, 360, 40, 15, juce::Justification::left);
     g.drawText("BRIGHT", 335, 360, 40, 15, juce::Justification::right);
     g.drawText("SOFT",  405, 360, 40, 15, juce::Justification::left);
     g.drawText("HARD",   465, 360, 40, 15, juce::Justification::right);
 
-    // --- COLUMN 3: THINNER OUTPUT, MIX ---
-    g.setColour(juce::Colour(0xFF888888));
+    // --- CARD 4: OUTPUT, MIX ---
     g.setFont(juce::FontOptions(13.0f).withName("Helvetica").withStyle("Bold"));
+    g.setColour(juce::Colours::white.withAlpha(0.9f));
     g.drawText("OUTPUT", 545, 90, 70, 20, juce::Justification::left);
-    // Moved Y coordinate from 275 to 260 to align with TONE/PUNCH
-    g.drawText("MIX", 580, 260, 70, 20, juce::Justification::centred);
+    g.drawText("MIX", 580, 260, 70, 20, juce::Justification::centred); // Perfectly aligned with TONE/PUNCH at Y=260
 
-    // Mix Descriptors
+    // Descriptors
     g.setFont(juce::FontOptions(9.0f).withName("Helvetica").withStyle("Bold"));
-    g.setColour(juce::Colour(0xFF55555D));
+    g.setColour(juce::Colours::white.withAlpha(0.6f));
     g.drawText("DRY", 565, 360, 30, 15, juce::Justification::left);
     g.drawText("WET", 635, 360, 30, 15, juce::Justification::right);
 }
@@ -198,23 +229,24 @@ void HomeDistoAudioProcessorEditor::resized()
     saveButton.setBounds(620, 20, 30, 30); 
     settingsButton.setBounds(660, 20, 30, 30); 
 
-    // --- COLUMN 1: MODES & FILTER ---
+    // --- CARD 1: MODES ---
     for (int i = 0; i < 6; ++i)
     {
         int col = i % 2; 
         int row = i / 2; 
-        modeButtons[i].setBounds(35 + (col * 105), 120 + (row * 45), 95, 25);
+        modeButtons[i].setBounds(35 + (col * 105), 118 + (row * 42), 95, 26);
     }
 
+    // --- CARD 2: FILTER ---
     lowCutSlider.setBounds(30, 325, 90, 30);  
     highCutSlider.setBounds(150, 325, 90, 30); 
 
-    // --- COLUMN 2: DRIVE & TONE SHAPING ---
+    // --- CARD 3: DRIVE, TONE & PUNCH ---
     driveKnob.setBounds(315, 115, 150, 150); 
     toneKnob.setBounds(290, 285, 70, 70);
     punchKnob.setBounds(420, 285, 70, 70);
 
-    // --- COLUMN 3: THIN OUTPUT/MIX ---
+    // --- CARD 4: OUTPUT & MIX ---
     outputKnob.setBounds(555, 125, 120, 120);
     autoToggle.setBounds(620, 90, 65, 20); 
     mixKnob.setBounds(580, 290, 70, 70);
