@@ -2,19 +2,19 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
-// Sleek 2D LookAndFeel with solid colors and no shading[cite: 4]
-class Vibrant2DLookAndFeel : public juce::LookAndFeel_V4
+// Sleek, 2D Flat LookAndFeel[cite: 3]
+class FlatGodLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    Vibrant2DLookAndFeel()
+    FlatGodLookAndFeel()
     {
-        setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xFF1E1E24)); 
-        setColour(juce::Slider::trackColourId, juce::Colour(0x30000000)); 
+        setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xFF2A2A32)); 
+        setColour(juce::Slider::trackColourId, juce::Colour(0xFFD0D0D5));
         
-        setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xFFFFFFFF));
-        setColour(juce::ComboBox::outlineColourId, juce::Colour(0xFFE0E0E5));
-        setColour(juce::ComboBox::textColourId, juce::Colour(0xFF1E1E24));
-        setColour(juce::ComboBox::arrowColourId, juce::Colour(0xFF1E1E24));
+        setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xFFE8E8ED));
+        setColour(juce::ComboBox::outlineColourId, juce::Colour(0xFFB0B0B5));
+        setColour(juce::ComboBox::textColourId, juce::Colour(0xFF1A1A20));
+        setColour(juce::ComboBox::arrowColourId, juce::Colour(0xFF1A1A20));
     }
 
     void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height, 
@@ -26,31 +26,30 @@ public:
         auto centreY = (float) y + (float) height * 0.5f;
         auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
 
-        // Solid, flat knob base[cite: 4]
-        g.setColour(juce::Colours::white);
+        // Flat 2D Knob Base[cite: 3]
+        g.setColour(juce::Colour(0xFFECECEF));
         g.fillEllipse(centreX - radius, centreY - radius, radius * 2, radius * 2);
         
-        // Crisp flat border[cite: 4]
-        g.setColour(juce::Colours::black.withAlpha(0.15f));
+        g.setColour(juce::Colour(0xFFC5C5CB));
         g.drawEllipse(centreX - radius, centreY - radius, radius * 2, radius * 2, 1.5f);
 
-        // Flat track arc[cite: 4]
+        // 2D Track Arc[cite: 3]
         juce::Path trackArc;
         trackArc.addCentredArc(centreX, centreY, radius - 6.0f, radius - 6.0f, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
         g.setColour(findColour(juce::Slider::trackColourId));
         g.strokePath(trackArc, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        // Flat active fill arc[cite: 4]
+        // 2D Active Fill Arc[cite: 3]
         juce::Path fillArc;
         fillArc.addCentredArc(centreX, centreY, radius - 6.0f, radius - 6.0f, 0.0f, rotaryStartAngle, angle, true);
         g.setColour(findColour(juce::Slider::rotarySliderFillColourId));
         g.strokePath(fillArc, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        // Flat indicator line[cite: 4]
+        // Flat Indicator Line[cite: 3]
         juce::Path p;
-        p.addRoundedRectangle(-1.5f, -radius + 4.0f, 3.0f, radius * 0.45f, 1.0f);
+        p.addRoundedRectangle(-2.0f, -radius + 4.0f, 4.0f, radius * 0.45f, 2.0f);
         p.applyTransform(juce::AffineTransform::rotation(angle).translated(centreX, centreY));
-        g.setColour(juce::Colour(0xFF1E1E24));
+        g.setColour(juce::Colour(0xFF1A1A20));
         g.fillPath(p);
     }
 
@@ -61,12 +60,10 @@ public:
         
         if (button.getName() == "SAVE" || button.getName() == "SETTINGS")
         {
-            g.setColour(shouldDrawButtonAsHighlighted ? juce::Colour(0xFFE0E0E5) : juce::Colours::white);
+            g.setColour(shouldDrawButtonAsHighlighted ? juce::Colour(0xFFD0D0D5) : juce::Colour(0xFFE8E8ED));
             g.fillRoundedRectangle(bounds, 4.0f);
-            g.setColour(juce::Colours::black.withAlpha(0.15f));
-            g.drawRoundedRectangle(bounds, 4.0f, 1.5f);
             
-            g.setColour(juce::Colour(0xFF1E1E24));
+            g.setColour(juce::Colour(0xFF1A1A20));
             if (button.getName() == "SAVE")
             {
                 g.drawRoundedRectangle(bounds.reduced(6.0f), 2.0f, 1.5f);
@@ -84,31 +81,33 @@ public:
                     spoke.applyTransform(juce::AffineTransform::rotation(juce::MathConstants<float>::pi * i / 3.0f).translated(cX, cY));
                     g.fillPath(spoke);
                 }
-                g.setColour(shouldDrawButtonAsHighlighted ? juce::Colour(0xFFE0E0E5) : juce::Colours::white);
+                g.setColour(shouldDrawButtonAsHighlighted ? juce::Colour(0xFFD0D0D5) : juce::Colour(0xFFE8E8ED));
                 g.fillEllipse(cX - 5, cY - 5, 10, 10);
-                g.setColour(juce::Colour(0xFF1E1E24));
+                g.setColour(juce::Colour(0xFF1A1A20));
                 g.drawEllipse(cX - 5, cY - 5, 10, 10, 1.5f);
             }
             return;
         }
 
-        // Flat high-contrast buttons for the mode section[cite: 4]
+        // Flat 2D Toggle Buttons[cite: 3]
         if (button.getToggleState())
         {
-            g.setColour(juce::Colour(0xFF1E1E24));
+            g.setColour(juce::Colour(0xFF2A2A32));
             g.fillRoundedRectangle(bounds, 4.0f);
         }
         else if (shouldDrawButtonAsHighlighted)
         {
-            g.setColour(juce::Colours::white.withAlpha(0.6f));
+            g.setColour(juce::Colour(0xFFD5D5DA));
             g.fillRoundedRectangle(bounds, 4.0f);
+            g.setColour(juce::Colour(0xFFB0B0B5));
+            g.drawRoundedRectangle(bounds, 4.0f, 1.0f);
         }
         else
         {
-            g.setColour(juce::Colours::white.withAlpha(0.3f));
+            g.setColour(juce::Colour(0xFFE8E8ED));
             g.fillRoundedRectangle(bounds, 4.0f);
-            g.setColour(juce::Colours::black.withAlpha(0.15f));
-            g.drawRoundedRectangle(bounds, 4.0f, 1.5f);
+            g.setColour(juce::Colour(0xFFC5C5CB));
+            g.drawRoundedRectangle(bounds, 4.0f, 1.0f);
         }
     }
 
@@ -117,7 +116,7 @@ public:
         if (button.getName() == "SAVE" || button.getName() == "SETTINGS") return; 
         
         g.setFont(juce::FontOptions(11.0f).withName("Helvetica").withStyle(button.getToggleState() ? "Bold" : "Plain"));
-        g.setColour(button.getToggleState() ? juce::Colours::white : juce::Colour(0xFF1E1E24));
+        g.setColour(button.getToggleState() ? juce::Colours::white : juce::Colour(0xFF1A1A20));
         g.drawText(button.getButtonText(), button.getLocalBounds(), juce::Justification::centred);
     }
 
@@ -125,14 +124,13 @@ public:
                            float sliderPos, float minSliderPos, float maxSliderPos,
                            const juce::Slider::SliderStyle style, juce::Slider& slider) override
     {
-        g.setColour(juce::Colours::black.withAlpha(0.2f));
+        // 2D Track line[cite: 3]
+        g.setColour(juce::Colour(0xFFD0D0D5));
         g.fillRect((float)x, (float)y + (float)height * 0.5f - 1.5f, (float)width, 3.0f);
 
-        g.setColour(juce::Colours::white);
+        // Flat 2D Thumb[cite: 3]
+        g.setColour(juce::Colour(0xFF2A2A32));
         g.fillEllipse(sliderPos - 6.0f, (float)y + (float)height * 0.5f - 6.0f, 12.0f, 12.0f);
-        
-        g.setColour(juce::Colour(0xFF1E1E24));
-        g.drawEllipse(sliderPos - 6.0f, (float)y + (float)height * 0.5f - 6.0f, 12.0f, 12.0f, 2.0f);
     }
 };
 
@@ -149,7 +147,7 @@ public:
 
 private:
     HomeDistoAudioProcessor& audioProcessor;
-    Vibrant2DLookAndFeel flatLaf;
+    FlatGodLookAndFeel flatLaf;
 
     juce::ComboBox presetCombo;
     juce::TextButton saveButton;
@@ -174,9 +172,12 @@ private:
     std::unique_ptr<SliderAttachment> driveAttach, outAttach, toneAttach, punchAttach, mixAttach;
     std::unique_ptr<SliderAttachment> lowAttach, highAttach;
     std::unique_ptr<ButtonAttachment> autoAttach;
+    
+    juce::Image noiseTexture; // Added for the premium texture[cite: 3]
+    void createNoiseTexture();
 
     juce::String getFrequencyString(float hz);
-    void drawTexturedCard(juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour baseColour); 
+    void drawTexturedCard(juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour baseColour);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HomeDistoAudioProcessorEditor)
 };
