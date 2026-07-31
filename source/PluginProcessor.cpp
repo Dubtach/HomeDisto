@@ -26,7 +26,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout HomeDistoAudioProcessor::cre
     params.push_back(std::make_unique<juce::AudioParameterFloat>("OUT", "Output", -24.0f, 24.0f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterBool>("AUTO", "Auto", false));
 
-    // Added Skew (logarithmic feel) to frequency bands for smoother dragging
     juce::NormalisableRange<float> lowRange(20.0f, 1000.0f, 1.0f, 0.3f);
     juce::NormalisableRange<float> highRange(1000.0f, 20000.0f, 10.0f, 0.3f);
     

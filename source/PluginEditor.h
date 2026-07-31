@@ -2,7 +2,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
-// Improved Flat 2D LookAndFeel
+// Strict 2D Flat LookAndFeel 
 class FlatGodLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
@@ -10,6 +10,12 @@ public:
     {
         setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xFFA855F7)); 
         setColour(juce::Slider::trackColourId, juce::Colour(0xFF2A2A30));
+        
+        // Preset ComboBox styling
+        setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xFF161618));
+        setColour(juce::ComboBox::outlineColourId, juce::Colour(0xFF2A2A30));
+        setColour(juce::ComboBox::textColourId, juce::Colours::white);
+        setColour(juce::ComboBox::arrowColourId, juce::Colour(0xFFA855F7));
     }
 
     void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height, 
@@ -19,59 +25,83 @@ public:
         auto radius = (float) juce::jmin (width / 2, height / 2) - 4.0f;
         auto centreX = (float) x + (float) width  * 0.5f;
         auto centreY = (float) y + (float) height * 0.5f;
-        auto rx = centreX - radius;
-        auto ry = centreY - radius;
-        auto rw = radius * 2.0f;
         auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
 
-        // 1. Base ring (Dark outline for 2D separation)
-        g.setColour(juce::Colour(0xFF101012));
-        g.fillEllipse(rx - 2, ry - 2, rw + 4, rw + 4);
-
-        // 2. Main Body
+        // Solid Outer Flat Base
         g.setColour(juce::Colour(0xFF161618));
-        g.fillEllipse(rx, ry, rw, rw);
+        g.fillEllipse(centreX - radius, centreY - radius, radius * 2, radius * 2);
 
-        // 3. Inner Cap (gives the knob flat depth)
-        auto capRadius = radius * 0.85f;
-        g.setColour(juce::Colour(0xFF1E1E22));
+        // Inner Cap
+        auto capRadius = radius * 0.82f;
+        g.setColour(juce::Colour(0xFF1C1C20));
         g.fillEllipse(centreX - capRadius, centreY - capRadius, capRadius * 2, capRadius * 2);
-        
         g.setColour(juce::Colour(0xFF2A2A30));
-        g.drawEllipse(centreX - capRadius, centreY - capRadius, capRadius * 2, capRadius * 2, 1.0f);
+        g.drawEllipse(centreX - capRadius, centreY - capRadius, capRadius * 2, capRadius * 2, 1.5f);
 
-        // 4. Solid Track Arc
+        // Solid Track Arc
         juce::Path trackArc;
         trackArc.addCentredArc(centreX, centreY, radius + 2.0f, radius + 2.0f, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
         g.setColour(findColour(juce::Slider::trackColourId));
-        g.strokePath(trackArc, juce::PathStrokeType(3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.strokePath(trackArc, juce::PathStrokeType(3.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        // 5. Fill Arc (Purple)
+        // Fill Arc
         juce::Path fillArc;
         fillArc.addCentredArc(centreX, centreY, radius + 2.0f, radius + 2.0f, 0.0f, rotaryStartAngle, angle, true);
         g.setColour(findColour(juce::Slider::rotarySliderFillColourId));
-        g.strokePath(fillArc, juce::PathStrokeType(3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.strokePath(fillArc, juce::PathStrokeType(3.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        // 6. Indicator Line
+        // Indicator Line
         juce::Path p;
-        auto pointerLength = capRadius * 0.6f;
-        p.addRoundedRectangle(-1.5f, -capRadius + 4.0f, 3.0f, pointerLength, 1.5f);
+        p.addRoundedRectangle(-1.5f, -capRadius + 4.0f, 3.0f, capRadius * 0.6f, 1.0f);
         p.applyTransform(juce::AffineTransform::rotation(angle).translated(centreX, centreY));
         g.setColour(juce::Colour(0xFFA855F7));
         g.fillPath(p);
     }
 
-    // Flat Styling for Mode List Buttons
     void drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour& backgroundColour,
                                bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
     {
         auto bounds = button.getLocalBounds().toFloat();
+        
+        // Handle Top Bar Icon Buttons First
+        if (button.getName() == "SAVE" || button.getName() == "SETTINGS")
+        {
+            g.setColour(shouldDrawButtonAsHighlighted ? juce::Colour(0xFF2A2A30) : juce::Colour(0xFF161618));
+            g.fillRoundedRectangle(bounds, 4.0f);
+            
+            g.setColour(juce::Colours::white);
+            if (button.getName() == "SAVE")
+            {
+                // Simple 2D Floppy Disk Icon
+                g.drawRoundedRectangle(bounds.reduced(6.0f), 2.0f, 1.5f);
+                g.fillRect(bounds.getX() + 10, bounds.getY() + 6, bounds.getWidth() - 20, 6.0f);
+                g.fillRect(bounds.getX() + 8, bounds.getBottom() - 12, bounds.getWidth() - 16, 6.0f);
+            }
+            else if (button.getName() == "SETTINGS")
+            {
+                // Simple 2D Gear Icon
+                auto cX = bounds.getCentreX();
+                auto cY = bounds.getCentreY();
+                for (int i = 0; i < 6; ++i)
+                {
+                    juce::Path spoke;
+                    spoke.addRectangle(-1.5f, -9.0f, 3.0f, 18.0f);
+                    spoke.applyTransform(juce::AffineTransform::rotation(juce::MathConstants<float>::pi * i / 3.0f).translated(cX, cY));
+                    g.fillPath(spoke);
+                }
+                g.setColour(shouldDrawButtonAsHighlighted ? juce::Colour(0xFF2A2A30) : juce::Colour(0xFF161618));
+                g.fillEllipse(cX - 5, cY - 5, 10, 10);
+                g.setColour(juce::Colours::white);
+                g.drawEllipse(cX - 5, cY - 5, 10, 10, 1.5f);
+            }
+            return;
+        }
+
+        // Standard Mode Buttons
         if (button.getToggleState())
         {
             g.setColour(juce::Colour(0xFF1E1E22));
             g.fillRoundedRectangle(bounds, 4.0f);
-            
-            // Left purple accent
             g.setColour(juce::Colour(0xFFA855F7));
             g.fillRoundedRectangle(0, 0, 4.0f, bounds.getHeight(), 2.0f);
         }
@@ -84,16 +114,18 @@ public:
 
     void drawButtonText (juce::Graphics& g, juce::TextButton& button, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
     {
+        if (button.getName() == "SAVE" || button.getName() == "SETTINGS") return; // No text for icons
+        
         g.setFont(juce::FontOptions(13.0f).withStyle(button.getToggleState() ? "Bold" : "Plain"));
         g.setColour(button.getToggleState() ? juce::Colour(0xFFA855F7) : juce::Colour(0xFF888888));
         g.drawText(button.getButtonText(), button.getLocalBounds().withTrimmedLeft(10), juce::Justification::centredLeft);
     }
 
-    // Invisible track for filter sliders, only draw the draggable node
     void drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
                            float sliderPos, float minSliderPos, float maxSliderPos,
                            const juce::Slider::SliderStyle style, juce::Slider& slider) override
     {
+        // Draw 2D interactive node precisely at sliderPos
         g.setColour(juce::Colour(0xFFA855F7));
         g.fillEllipse(sliderPos - 6.0f, (float)y + (float)height * 0.5f - 6.0f, 12.0f, 12.0f);
         g.setColour(juce::Colours::white);
@@ -116,20 +148,24 @@ private:
     HomeDistoAudioProcessor& audioProcessor;
     FlatGodLookAndFeel flatLaf;
 
+    // Header UI
+    juce::ComboBox presetCombo;
+    juce::TextButton saveButton;
+    juce::TextButton settingsButton;
+
     // Main Knobs
     juce::Slider driveKnob;
     juce::Slider outputKnob; 
     juce::Slider toneKnob;
     juce::Slider punchKnob;
     juce::Slider mixKnob;
-
     juce::ToggleButton autoToggle;
     
     // Mode List
     juce::TextButton modeButtons[4];
     juce::StringArray modeNames = { "PUNCH", "TUBE", "TAPE", "DIGITAL" };
     
-    // Interactive Filter Sliders
+    // Filter Sliders
     juce::Slider lowCutSlider;
     juce::Slider highCutSlider;
 
