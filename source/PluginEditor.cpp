@@ -20,22 +20,25 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     settingsButton.setName("SETTINGS");
     addAndMakeVisible(settingsButton);
 
-    auto setupKnob = [this](juce::Slider& slider, const juce::String& paramID, std::unique_ptr<SliderAttachment>& attach) {
+    auto setupKnob = [this](juce::Slider& slider, const juce::String& paramID, std::unique_ptr<SliderAttachment>& attach, juce::Colour glowColour) {
         slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        slider.setColour(juce::Slider::rotarySliderFillColourId, glowColour); // Pass theme color to LookAndFeel
         addAndMakeVisible(slider);
         attach = std::make_unique<SliderAttachment>(audioProcessor.apvts, paramID, slider);
     };
 
-    setupKnob(driveKnob, "DRIVE", driveAttach); 
-    setupKnob(outputKnob, "OUT", outAttach); 
-    setupKnob(toneKnob, "TONE", toneAttach);
-    setupKnob(punchKnob, "PUNCH", punchAttach);
-    setupKnob(mixKnob, "MIX", mixAttach);
+    // Assigning the Cyberpunk colors to the respective knobs for neon glowing tracks!
+    setupKnob(driveKnob, "DRIVE", driveAttach, juce::Colour(0xFFB900FF)); 
+    setupKnob(toneKnob, "TONE", toneAttach, juce::Colour(0xFFB900FF));
+    setupKnob(punchKnob, "PUNCH", punchAttach, juce::Colour(0xFFB900FF));
+
+    setupKnob(outputKnob, "OUT", outAttach, juce::Colour(0xFFFF007F)); 
+    setupKnob(mixKnob, "MIX", mixAttach, juce::Colour(0xFFFF007F));
 
     autoToggle.setButtonText("AUTO");
-    autoToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFFFFFFFF));
-    autoToggle.setColour(juce::ToggleButton::textColourId, juce::Colour(0xFF888888)); 
+    autoToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFFFF007F)); // Match output theme
+    autoToggle.setColour(juce::ToggleButton::textColourId, juce::Colours::white); 
     addAndMakeVisible(autoToggle);
     autoAttach = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "AUTO", autoToggle);
 
@@ -102,20 +105,20 @@ void HomeDistoAudioProcessorEditor::drawShadedCard(juce::Graphics& g, juce::Rect
 
     // 2. Synthwave highly-saturated gradient
     juce::ColourGradient grad(baseColour, bounds.getX(), bounds.getY(),
-                               baseColour.darker(0.25f), bounds.getX(), bounds.getBottom(), false);
+                               baseColour.darker(0.20f), bounds.getX(), bounds.getBottom(), false);
     g.setGradientFill(grad);
     g.fillRoundedRectangle(bounds, 6.0f);
 
-    // 3. Subtle texture overlay
-    g.setColour(juce::Colours::black.withAlpha(0.04f));
+    // 3. Pronounced Mesh Texture (Higher opacity & slightly thicker lines for visibility)
+    g.setColour(juce::Colours::black.withAlpha(0.12f));
     for (float y = bounds.getY() + 4.0f; y < bounds.getBottom() - 2.0f; y += 4.0f)
-        g.drawLine(bounds.getX() + 2.0f, y, bounds.getRight() - 2.0f, y, 1.0f);
+        g.drawLine(bounds.getX() + 2.0f, y, bounds.getRight() - 2.0f, y, 1.2f);
     for (float x = bounds.getX() + 4.0f; x < bounds.getRight() - 2.0f; x += 4.0f)
-        g.drawLine(x, bounds.getY() + 2.0f, x, bounds.getBottom() - 2.0f, 1.0f);
+        g.drawLine(x, bounds.getY() + 2.0f, x, bounds.getBottom() - 2.0f, 1.2f);
 
     // 4. Clean dark border
-    g.setColour(juce::Colours::black.withAlpha(0.40f));
-    g.drawRoundedRectangle(bounds, 6.0f, 1.5f);
+    g.setColour(juce::Colours::black.withAlpha(0.50f));
+    g.drawRoundedRectangle(bounds, 6.0f, 2.0f);
 }
 
 void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
@@ -129,11 +132,11 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour(juce::Colour(0xFF222228));
     g.drawRoundedRectangle(10, 10, 700, 390, 8, 1.5f);
 
-    // Title Block
-    g.setColour(juce::Colours::white);
+    // Title Block - Updated to match Synthwave aesthetic
     g.setFont(juce::FontOptions(22.0f).withName("Helvetica").withStyle("Bold"));
+    g.setColour(juce::Colours::white);
     g.drawText("HOME :", 25, 20, 80, 30, juce::Justification::centredLeft);
-    g.setColour(juce::Colours::white.withAlpha(0.6f));
+    g.setColour(juce::Colour(0xFF00E5FF)); // Cyan tint for "DISTO"
     g.drawText("DISTO", 105, 20, 80, 30, juce::Justification::centredLeft);
 
     // Divider Line
@@ -157,30 +160,32 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     drawShadedCard(g, juce::Rectangle<float>(530, 80, 170, 310), juce::Colour(0xFFFF007F));
 
     // ==========================================
-    // TEXT LABELS & OVERLAYS 
+    // HIGH CONTRAST TEXT LABELS 
     // ==========================================
     
-    auto drawEngravedText = [&](const juce::String& text, int x, int y, int w, int h, juce::Justification just, float alpha = 0.90f) {
-        g.setColour(juce::Colours::white.withAlpha(0.35f));    
-        g.drawText(text, x, y + 1, w, h, just);
-        g.setColour(juce::Colours::black.withAlpha(alpha));    
+    // Updated text drawing: Stark black with a crisp dark-translucent drop shadow 
+    // This creates maximum legibility against highly saturated background colors.
+    auto drawCardText = [&](const juce::String& text, int x, int y, int w, int h, juce::Justification just) {
+        g.setColour(juce::Colours::black.withAlpha(0.35f));    // Drop shadow
+        g.drawText(text, x, y + 1.5f, w, h, just);
+        g.setColour(juce::Colour(0xFF09090B));                 // Solid UI Black Core
         g.drawText(text, x, y, w, h, just);
     };
 
-    g.setFont(juce::FontOptions(13.0f).withName("Helvetica").withStyle("Bold"));
+    g.setFont(juce::FontOptions(14.0f).withName("Helvetica").withStyle("Bold"));
 
     // --- CARD 1: MODES ---
-    drawEngravedText("MODE", 20, 90, 230, 20, juce::Justification::centred);
+    drawCardText("MODE", 20, 90, 230, 20, juce::Justification::centred);
 
     // --- CARD 2: FILTER ---
-    drawEngravedText("FILTER", 20, 273, 230, 20, juce::Justification::centred);
+    drawCardText("FILTER", 20, 273, 230, 20, juce::Justification::centred);
 
-    g.setFont(juce::FontOptions(10.0f).withName("Helvetica").withStyle("Bold"));
-    drawEngravedText("LOW CUT", 35, 295, 80, 15, juce::Justification::left, 0.85f);
-    drawEngravedText("HIGH CUT", 155, 295, 80, 15, juce::Justification::right, 0.85f);
+    g.setFont(juce::FontOptions(11.0f).withName("Helvetica").withStyle("Bold"));
+    drawCardText("LOW CUT", 35, 295, 80, 15, juce::Justification::left);
+    drawCardText("HIGH CUT", 155, 295, 80, 15, juce::Justification::right);
     
-    drawEngravedText(getFrequencyString(lowCutSlider.getValue()), 35, 310, 80, 15, juce::Justification::left, 0.95f); 
-    drawEngravedText(getFrequencyString(highCutSlider.getValue()), 155, 310, 80, 15, juce::Justification::right, 0.95f); 
+    drawCardText(getFrequencyString(lowCutSlider.getValue()), 35, 310, 80, 15, juce::Justification::left); 
+    drawCardText(getFrequencyString(highCutSlider.getValue()), 155, 310, 80, 15, juce::Justification::right); 
 
     // Mini filter graph aligned with sliders
     float lowProp = lowCutSlider.valueToProportionOfLength(lowCutSlider.getValue());
@@ -198,33 +203,34 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     filterCurve.lineTo(highX, graphY);
     filterCurve.cubicTo(highX + 6, graphY, highX + 6, 375, 235, 375);
     
-    g.setColour(juce::Colours::white.withAlpha(0.3f));
-    g.strokePath(filterCurve, juce::PathStrokeType(2.0f), juce::AffineTransform::translation(0, 1.0f));
-    g.setColour(juce::Colour(0xFF151515));
-    g.strokePath(filterCurve, juce::PathStrokeType(2.5f)); 
+    // Thicker, darker stroke for better visibility against Mint Green
+    g.setColour(juce::Colours::black.withAlpha(0.4f));
+    g.strokePath(filterCurve, juce::PathStrokeType(3.5f), juce::AffineTransform::translation(0, 1.5f));
+    g.setColour(juce::Colour(0xFF09090B));
+    g.strokePath(filterCurve, juce::PathStrokeType(3.0f)); 
 
     // --- CARD 3: DRIVE, TONE, PUNCH ---
-    g.setFont(juce::FontOptions(13.0f).withName("Helvetica").withStyle("Bold"));
-    drawEngravedText("DRIVE", 260, 90, 260, 20, juce::Justification::centred); 
-    drawEngravedText("TONE", 285, 260, 80, 20, juce::Justification::centred);
-    drawEngravedText("PUNCH", 415, 260, 80, 20, juce::Justification::centred);
+    g.setFont(juce::FontOptions(14.0f).withName("Helvetica").withStyle("Bold"));
+    drawCardText("DRIVE", 260, 90, 260, 20, juce::Justification::centred); 
+    drawCardText("TONE", 285, 260, 80, 20, juce::Justification::centred);
+    drawCardText("PUNCH", 415, 260, 80, 20, juce::Justification::centred);
 
     // Descriptors
-    g.setFont(juce::FontOptions(9.0f).withName("Helvetica").withStyle("Bold"));
-    drawEngravedText("DARK",  275, 360, 40, 15, juce::Justification::left, 0.8f);
-    drawEngravedText("BRIGHT", 335, 360, 40, 15, juce::Justification::right, 0.8f);
-    drawEngravedText("SOFT",  405, 360, 40, 15, juce::Justification::left, 0.8f);
-    drawEngravedText("HARD",   465, 360, 40, 15, juce::Justification::right, 0.8f);
+    g.setFont(juce::FontOptions(10.0f).withName("Helvetica").withStyle("Bold"));
+    drawCardText("DARK",  275, 360, 40, 15, juce::Justification::left);
+    drawCardText("BRIGHT", 335, 360, 40, 15, juce::Justification::right);
+    drawCardText("SOFT",  405, 360, 40, 15, juce::Justification::left);
+    drawCardText("HARD",   465, 360, 40, 15, juce::Justification::right);
 
     // --- CARD 4: OUTPUT, MIX ---
-    g.setFont(juce::FontOptions(13.0f).withName("Helvetica").withStyle("Bold"));
-    drawEngravedText("OUTPUT", 545, 90, 70, 20, juce::Justification::left);
-    drawEngravedText("MIX", 580, 260, 70, 20, juce::Justification::centred); 
+    g.setFont(juce::FontOptions(14.0f).withName("Helvetica").withStyle("Bold"));
+    drawCardText("OUTPUT", 545, 90, 70, 20, juce::Justification::left);
+    drawCardText("MIX", 580, 260, 70, 20, juce::Justification::centred); 
 
     // Descriptors
-    g.setFont(juce::FontOptions(9.0f).withName("Helvetica").withStyle("Bold"));
-    drawEngravedText("DRY", 565, 360, 30, 15, juce::Justification::left, 0.8f);
-    drawEngravedText("WET", 635, 360, 30, 15, juce::Justification::right, 0.8f);
+    g.setFont(juce::FontOptions(10.0f).withName("Helvetica").withStyle("Bold"));
+    drawCardText("DRY", 565, 360, 30, 15, juce::Justification::left);
+    drawCardText("WET", 635, 360, 30, 15, juce::Justification::right);
 }
 
 void HomeDistoAudioProcessorEditor::resized()

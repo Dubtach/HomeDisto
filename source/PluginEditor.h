@@ -2,7 +2,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
-// Minimalist, Modern UI with sleek LED-style rings and a Synthwave palette
+// Minimalist, Modern UI with sleek LED-style rings and Neon Glows
 class MinimalistSynthLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
@@ -19,14 +19,17 @@ public:
 
     void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height, 
                            float sliderPos, const float rotaryStartAngle, 
-                           const float rotaryEndAngle, juce::Slider&) override
+                           const float rotaryEndAngle, juce::Slider& slider) override
     {
         auto radius = (float) juce::jmin (width / 2, height / 2) - 4.0f;
         auto centreX = (float) x + (float) width  * 0.5f;
         auto centreY = (float) y + (float) height * 0.5f;
         auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
 
-        // 1. Base / Inner Shadow (Creates a subtle well for the knob)
+        // Fetch custom color for the neon glow (fallback to white)
+        auto neonColour = slider.findColour(juce::Slider::rotarySliderFillColourId);
+
+        // 1. Base / Inner Shadow 
         g.setColour(juce::Colour(0xFF0A0A0C));
         g.fillEllipse(centreX - radius + 2.0f, centreY - radius + 2.0f, (radius - 2.0f) * 2.0f, (radius - 2.0f) * 2.0f);
 
@@ -36,10 +39,15 @@ public:
         g.setColour(juce::Colour(0xFF000000).withAlpha(0.4f)); 
         g.strokePath(bgArc, juce::PathStrokeType(6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        // 3. Active LED Track
+        // 3. Active LED Track with Neon Glow
         juce::Path fillArc;
         fillArc.addCentredArc(centreX, centreY, radius, radius, 0.0f, rotaryStartAngle, angle, true);
-        g.setColour(juce::Colours::white);
+        
+        // Outer Glow
+        g.setColour(neonColour.withAlpha(0.4f));
+        g.strokePath(fillArc, juce::PathStrokeType(12.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        // Solid Core
+        g.setColour(neonColour.brighter(0.2f));
         g.strokePath(fillArc, juce::PathStrokeType(6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
         // 4. Minimalist Center Cap
@@ -54,7 +62,7 @@ public:
         g.strokePath(pointer, juce::PathStrokeType(2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         
         // 6. Subtle inner boundary ring
-        g.setColour(juce::Colours::white.withAlpha(0.08f));
+        g.setColour(juce::Colours::white.withAlpha(0.1f));
         g.drawEllipse(centreX - (radius - 7.0f), centreY - (radius - 7.0f), (radius - 7.0f) * 2.0f, (radius - 7.0f) * 2.0f, 1.0f);
     }
 
@@ -94,9 +102,10 @@ public:
             return;
         }
 
+        // Standard Toggle Buttons (Modes)
         if (button.getToggleState())
         {
-            g.setColour(juce::Colour(0xFF2A2A32));
+            g.setColour(juce::Colour(0xFF111114)); // Deep dark when active for high contrast against cyan
             g.fillRoundedRectangle(bounds, 4.0f);
             
             g.setColour(juce::Colours::white);
@@ -105,12 +114,12 @@ public:
         }
         else if (shouldDrawButtonAsHighlighted)
         {
-            g.setColour(juce::Colour(0xFF222228).withAlpha(0.5f));
+            g.setColour(juce::Colour(0xFF222228).withAlpha(0.6f));
             g.fillRoundedRectangle(bounds, 4.0f);
         }
         else
         {
-            g.setColour(juce::Colour(0xFF121215).withAlpha(0.6f));
+            g.setColour(juce::Colour(0xFF121215).withAlpha(0.7f));
             g.fillRoundedRectangle(bounds, 4.0f);
         }
     }
@@ -129,11 +138,11 @@ public:
                            const juce::Slider::SliderStyle style, juce::Slider& slider) override
     {
         // Dark Track line
-        g.setColour(juce::Colour(0xFF000000).withAlpha(0.4f));
+        g.setColour(juce::Colour(0xFF000000).withAlpha(0.5f));
         g.fillRoundedRectangle((float)x, (float)y + (float)height * 0.5f - 2.0f, (float)width, 4.0f, 2.0f);
 
-        // Solid White Thumb
-        g.setColour(juce::Colours::black.withAlpha(0.3f));
+        // Thumb Glow & Core
+        g.setColour(juce::Colours::black.withAlpha(0.4f));
         g.fillEllipse(sliderPos - 6.0f, (float)y + (float)height * 0.5f - 4.0f, 12.0f, 12.0f); // Shadow
 
         g.setColour(juce::Colours::white);
