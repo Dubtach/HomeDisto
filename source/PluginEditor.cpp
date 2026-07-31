@@ -7,7 +7,7 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     juce::LookAndFeel::getDefaultLookAndFeel().setDefaultSansSerifTypefaceName("Helvetica");
 
     setSize (720, 410);
-    setLookAndFeel(&modernLaf); 
+    setLookAndFeel(&synthLaf); 
 
     presetCombo.addItemList({"Huge Punch", "Tape Saturation", "Digital Crush", "Warm Tube", "Heavy Fuzz"}, 1);
     presetCombo.setSelectedId(1, juce::dontSendNotification);
@@ -93,27 +93,27 @@ juce::String HomeDistoAudioProcessorEditor::getFrequencyString(float hz)
 
 void HomeDistoAudioProcessorEditor::drawShadedCard(juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour baseColour)
 {
-    // 1. Sharp, deep drop shadows to pop the card forward
+    // 1. Sharp drop shadows for depth
     for (int i = 1; i <= 7; ++i)
     {
         g.setColour(juce::Colours::black.withAlpha(0.12f * (8 - i)));
         g.fillRoundedRectangle(bounds.expanded((float)i * 0.4f).translated(0.0f, 2.0f + i * 0.5f), 8.0f);
     }
 
-    // 2. High-saturation vibrant gradient (no bright white overlays that wash it out)
+    // 2. Synthwave highly-saturated gradient
     juce::ColourGradient grad(baseColour, bounds.getX(), bounds.getY(),
                                baseColour.darker(0.25f), bounds.getX(), bounds.getBottom(), false);
     g.setGradientFill(grad);
     g.fillRoundedRectangle(bounds, 6.0f);
 
-    // 3. Very subtle mesh texture so we don't muddy the bright color
+    // 3. Subtle texture overlay
     g.setColour(juce::Colours::black.withAlpha(0.04f));
     for (float y = bounds.getY() + 4.0f; y < bounds.getBottom() - 2.0f; y += 4.0f)
         g.drawLine(bounds.getX() + 2.0f, y, bounds.getRight() - 2.0f, y, 1.0f);
     for (float x = bounds.getX() + 4.0f; x < bounds.getRight() - 2.0f; x += 4.0f)
         g.drawLine(x, bounds.getY() + 2.0f, x, bounds.getBottom() - 2.0f, 1.0f);
 
-    // 4. Clean dark border to contain the bright color
+    // 4. Clean dark border
     g.setColour(juce::Colours::black.withAlpha(0.40f));
     g.drawRoundedRectangle(bounds, 6.0f, 1.5f);
 }
@@ -141,26 +141,25 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawLine(25, 65, 695, 65, 2.0f); 
 
     // ==========================================
-    // ULTRA-VIBRANT COLOR PALETTE
+    // SYNTHWAVE / CYBERPUNK PALETTE
     // ==========================================
     
-    // Card 1: MODES Section (Neon Emerald Green)
-    drawShadedCard(g, juce::Rectangle<float>(20, 80, 230, 175), juce::Colour(0xFF00E65C));
+    // Card 1: MODES Section (Neon Cyan)
+    drawShadedCard(g, juce::Rectangle<float>(20, 80, 230, 175), juce::Colour(0xFF00E5FF));
 
-    // Card 2: FILTER Section (Vibrant Gold/Yellow)
-    drawShadedCard(g, juce::Rectangle<float>(20, 265, 230, 125), juce::Colour(0xFFFFCC00));
+    // Card 2: FILTER Section (Neon Mint)
+    drawShadedCard(g, juce::Rectangle<float>(20, 265, 230, 125), juce::Colour(0xFF00FF87));
 
-    // Card 3: DRIVE / TONE / PUNCH Section (Vibrant Orange)
-    drawShadedCard(g, juce::Rectangle<float>(260, 80, 260, 310), juce::Colour(0xFFFF5500));
+    // Card 3: DRIVE / TONE / PUNCH Section (Electric Purple)
+    drawShadedCard(g, juce::Rectangle<float>(260, 80, 260, 310), juce::Colour(0xFFB900FF));
 
-    // Card 4: OUTPUT / MIX Section (Vibrant Crimson Red)
-    drawShadedCard(g, juce::Rectangle<float>(530, 80, 170, 310), juce::Colour(0xFFFF1A40));
+    // Card 4: OUTPUT / MIX Section (Hot Magenta)
+    drawShadedCard(g, juce::Rectangle<float>(530, 80, 170, 310), juce::Colour(0xFFFF007F));
 
     // ==========================================
     // TEXT LABELS & OVERLAYS 
     // ==========================================
     
-    // Increased dark text alpha so it stays legible against the ultra-bright backgrounds
     auto drawEngravedText = [&](const juce::String& text, int x, int y, int w, int h, juce::Justification just, float alpha = 0.90f) {
         g.setColour(juce::Colours::white.withAlpha(0.35f));    
         g.drawText(text, x, y + 1, w, h, just);

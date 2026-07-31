@@ -2,14 +2,14 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
-// Sleek, Modern UI with high-contrast matte knobs and clean lines
-class ModernBrightLookAndFeel : public juce::LookAndFeel_V4
+// Minimalist, Modern UI with sleek LED-style rings and a Synthwave palette
+class MinimalistSynthLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    ModernBrightLookAndFeel()
+    MinimalistSynthLookAndFeel()
     {
         setColour(juce::Slider::rotarySliderFillColourId, juce::Colours::white); 
-        setColour(juce::Slider::trackColourId, juce::Colour(0xFF101010));
+        setColour(juce::Slider::trackColourId, juce::Colour(0xFF000000).withAlpha(0.5f));
         
         setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xFF161618));
         setColour(juce::ComboBox::outlineColourId, juce::Colour(0xFF2A2A30));
@@ -26,39 +26,36 @@ public:
         auto centreY = (float) y + (float) height * 0.5f;
         auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
 
-        // 1. Drop Shadow for the Knob
-        g.setColour(juce::Colours::black.withAlpha(0.3f));
-        g.fillEllipse(centreX - radius + 2.0f, centreY - radius + 3.0f, radius * 2.0f, radius * 2.0f);
+        // 1. Base / Inner Shadow (Creates a subtle well for the knob)
+        g.setColour(juce::Colour(0xFF0A0A0C));
+        g.fillEllipse(centreX - radius + 2.0f, centreY - radius + 2.0f, (radius - 2.0f) * 2.0f, (radius - 2.0f) * 2.0f);
 
-        // 2. Outer Track (Background)
-        juce::Path backgroundArc;
-        backgroundArc.addCentredArc(centreX, centreY, radius, radius, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
-        g.setColour(juce::Colour(0xFF141418).withAlpha(0.6f));
-        g.strokePath(backgroundArc, juce::PathStrokeType(5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        // 2. Background Track
+        juce::Path bgArc;
+        bgArc.addCentredArc(centreX, centreY, radius, radius, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
+        g.setColour(juce::Colour(0xFF000000).withAlpha(0.4f)); 
+        g.strokePath(bgArc, juce::PathStrokeType(6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        // 3. Active Track (Fill - High Contrast)
+        // 3. Active LED Track
         juce::Path fillArc;
         fillArc.addCentredArc(centreX, centreY, radius, radius, 0.0f, rotaryStartAngle, angle, true);
         g.setColour(juce::Colours::white);
-        g.strokePath(fillArc, juce::PathStrokeType(5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.strokePath(fillArc, juce::PathStrokeType(6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        // 4. Matte Black Knob Body
-        auto knobRadius = radius - 7.0f;
-        juce::ColourGradient knobGrad(juce::Colour(0xFF2C2C32), centreX, centreY - knobRadius,
-                                      juce::Colour(0xFF121215), centreX, centreY + knobRadius, false);
-        g.setGradientFill(knobGrad);
-        g.fillEllipse(centreX - knobRadius, centreY - knobRadius, knobRadius * 2, knobRadius * 2);
-
-        // 5. Subtle Bevel / Edge Ring
-        g.setColour(juce::Colour(0xFF3A3A42));
-        g.drawEllipse(centreX - knobRadius, centreY - knobRadius, knobRadius * 2, knobRadius * 2, 1.5f);
-
-        // 6. Modern Sharp Indicator
-        juce::Path pointer;
-        pointer.addRoundedRectangle(-1.5f, -knobRadius + 3.0f, 3.0f, knobRadius * 0.45f, 1.0f);
-        pointer.applyTransform(juce::AffineTransform::rotation(angle).translated(centreX, centreY));
+        // 4. Minimalist Center Cap
         g.setColour(juce::Colours::white);
-        g.fillPath(pointer);
+        g.fillEllipse(centreX - 3.5f, centreY - 3.5f, 7.0f, 7.0f);
+
+        // 5. Minimalist Pointer Line
+        juce::Path pointer;
+        pointer.startNewSubPath(centreX, centreY);
+        pointer.lineTo(centreX + (radius - 7.0f) * std::sin(angle), centreY - (radius - 7.0f) * std::cos(angle));
+        g.setColour(juce::Colours::white);
+        g.strokePath(pointer, juce::PathStrokeType(2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        
+        // 6. Subtle inner boundary ring
+        g.setColour(juce::Colours::white.withAlpha(0.08f));
+        g.drawEllipse(centreX - (radius - 7.0f), centreY - (radius - 7.0f), (radius - 7.0f) * 2.0f, (radius - 7.0f) * 2.0f, 1.0f);
     }
 
     void drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour& backgroundColour,
@@ -132,7 +129,7 @@ public:
                            const juce::Slider::SliderStyle style, juce::Slider& slider) override
     {
         // Dark Track line
-        g.setColour(juce::Colour(0xFF141418).withAlpha(0.6f));
+        g.setColour(juce::Colour(0xFF000000).withAlpha(0.4f));
         g.fillRoundedRectangle((float)x, (float)y + (float)height * 0.5f - 2.0f, (float)width, 4.0f, 2.0f);
 
         // Solid White Thumb
@@ -157,7 +154,7 @@ public:
 
 private:
     HomeDistoAudioProcessor& audioProcessor;
-    ModernBrightLookAndFeel modernLaf;
+    MinimalistSynthLookAndFeel synthLaf;
 
     // Header UI
     juce::ComboBox presetCombo;
