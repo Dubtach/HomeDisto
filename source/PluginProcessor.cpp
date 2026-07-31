@@ -21,22 +21,21 @@ juce::AudioProcessorValueTreeState::ParameterLayout HomeDistoAudioProcessor::cre
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
     
-    // Distortion Engine
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("DRIVE", "Drive", 1.0f, 10.0f, 1.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("SHAPE", "Shape", 0.1f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("DRIVE", "Drive", 0.0f, 10.0f, 5.0f));
     
-    // Changed to Gain ranges (-15dB to +15dB) for a proper 3-band EQ
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("LOW", "Low", -15.0f, 15.0f, 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("MID", "Mid", -15.0f, 15.0f, 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("HIGH", "High", -15.0f, 15.0f, 0.0f));
+    juce::StringArray algos = { "Warm", "Punch", "Tape", "Digital", "Fuzz" };
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("ALGO", "Algorithm", algos, 0));
     
-    // Domestic Color
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("REVERB", "Reverb", 0.0f, 1.0f, 0.2f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("SAT", "Saturation", 1.0f, 5.0f, 1.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("LOW_CUT", "Low Cut", 20.0f, 1000.0f, 20.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("HIGH_CUT", "High Cut", 1000.0f, 20000.0f, 20000.0f));
     
-    // Output
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("TONE", "Tone", -10.0f, 10.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("PUNCH", "Punch", 0.0f, 10.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("TEXTURE", "Texture", 0.0f, 10.0f, 0.0f));
+    
     params.push_back(std::make_unique<juce::AudioParameterFloat>("MIX", "Mix", 0.0f, 1.0f, 1.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("OUT", "Output", 0.0f, 2.0f, 1.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("OUT", "Output", -24.0f, 12.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("AUTO", "Auto", false));
 
     return { params.begin(), params.end() };
 }
@@ -48,11 +47,8 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     spec.maximumBlockSize = samplesPerBlock;
     spec.numChannels = getTotalNumOutputChannels();
 
-    lowEQ.prepare(spec);
-    midEQ.prepare(spec);
-    highEQ.prepare(spec);
-    
-    reverb.setSampleRate(sampleRate);
+    lowCutFilter.prepare(spec);
+    highCutFilter.prepare(spec);
 }
 
 void HomeDistoAudioProcessor::releaseResources() {}
@@ -74,70 +70,38 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
+    // Fetch parameters
     float drive = apvts.getRawParameterValue("DRIVE")->load();
-    float shape = apvts.getRawParameterValue("SHAPE")->load();
-    float lowDB = apvts.getRawParameterValue("LOW")->load();
-    float midDB = apvts.getRawParameterValue("MID")->load();
-    float highDB = apvts.getRawParameterValue("HIGH")->load();
-    float revAmount = apvts.getRawParameterValue("REVERB")->load();
-    float sat = apvts.getRawParameterValue("SAT")->load();
+    float lowCut = apvts.getRawParameterValue("LOW_CUT")->load();
+    float highCut = apvts.getRawParameterValue("HIGH_CUT")->load();
     float mix = apvts.getRawParameterValue("MIX")->load();
     float outVol = apvts.getRawParameterValue("OUT")->load();
 
-    // Update EQ Coefficients
-    *lowEQ.state = *juce::dsp::IIR::Coefficients<float>::makeLowShelf(getSampleRate(), 250.0f, 0.707f, juce::Decibels::decibelsToGain(lowDB));
-    *midEQ.state = *juce::dsp::IIR::Coefficients<float>::makePeakFilter(getSampleRate(), 1000.0f, 0.707f, juce::Decibels::decibelsToGain(midDB));
-    *highEQ.state = *juce::dsp::IIR::Coefficients<float>::makeHighShelf(getSampleRate(), 4000.0f, 0.707f, juce::Decibels::decibelsToGain(highDB));
+    // Update Filter Coefficients
+    *lowCutFilter.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(getSampleRate(), lowCut);
+    *highCutFilter.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(getSampleRate(), highCut);
 
-    // Update Reverb Settings
-    reverbParams.roomSize = revAmount;
-    reverbParams.wetLevel = revAmount;
-    reverbParams.dryLevel = 1.0f - (revAmount * 0.5f);
-    reverb.setParameters(reverbParams);
-
-    // Copy dry buffer for Mix
     juce::AudioBuffer<float> dryBuffer;
     dryBuffer.makeCopyOf(buffer);
 
-    // 1. Apply Drive & Asymmetric Shape Distortion
+    // 1. Basic Distortion Pass (Placeholder for algorithms)
     for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
         auto* channelData = buffer.getWritePointer(channel);
         for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
         {
-            float in = channelData[sample] * drive; 
-            
-            if (in > 0.0f)
-                channelData[sample] = std::tanh(in) * shape;
-            else
-                channelData[sample] = std::tanh(in);
+            channelData[sample] = std::tanh(channelData[sample] * (1.0f + drive));
         }
     }
 
-    // 2. Process 3-Band EQ
+    // 2. Filters
     juce::dsp::AudioBlock<float> block (buffer);
     juce::dsp::ProcessContextReplacing<float> context (block);
-    lowEQ.process(context);
-    midEQ.process(context);
-    highEQ.process(context);
+    lowCutFilter.process(context);
+    highCutFilter.process(context);
 
-    // 3. Apply Saturation Color Stage
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
-    {
-        auto* channelData = buffer.getWritePointer(channel);
-        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
-        {
-            channelData[sample] = std::tanh(channelData[sample] * sat);
-        }
-    }
-
-    // 4. Reverb Processing
-    if (totalNumInputChannels == 1)
-        reverb.processMono(buffer.getWritePointer(0), buffer.getNumSamples());
-    else if (totalNumInputChannels == 2)
-        reverb.processStereo(buffer.getWritePointer(0), buffer.getWritePointer(1), buffer.getNumSamples());
-
-    // 5. Dry/Wet Mix & Output Gain
+    // 3. Dry/Wet Mix & Output Gain
+    float outGainLinear = juce::Decibels::decibelsToGain(outVol);
     for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
         auto* channelData = buffer.getWritePointer(channel);
@@ -147,7 +111,7 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         {
             float wetSignal = channelData[sample];
             float drySignal = dryData[sample];
-            channelData[sample] = (drySignal * (1.0f - mix) + wetSignal * mix) * outVol;
+            channelData[sample] = (drySignal * (1.0f - mix) + wetSignal * mix) * outGainLinear;
         }
     }
 }
@@ -167,13 +131,11 @@ void HomeDistoAudioProcessor::setStateInformation (const void* data, int sizeInB
             apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
 }
 
-// FIXED: Added missing Editor Creation function
 juce::AudioProcessorEditor* HomeDistoAudioProcessor::createEditor()
 {
     return new HomeDistoAudioProcessorEditor (*this);
 }
 
-// Global filter entry point
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new HomeDistoAudioProcessor();
