@@ -2,7 +2,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
-// Rich Tactile LookAndFeel with Depth, Gloss, & Metallic Shading[cite: 6]
+// Rich Tactile LookAndFeel with Depth, Gloss, & Metallic Shading
 class FlatGodLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
@@ -84,7 +84,7 @@ public:
     {
         auto bounds = button.getLocalBounds().toFloat();
         
-        if (button.getName() == "SAVE" || button.getName() == "SETTINGS")[cite: 6]
+        if (button.getName() == "SAVE" || button.getName() == "SETTINGS")
         {
             g.setColour(shouldDrawButtonAsHighlighted ? juce::Colour(0xFF2A2A30) : juce::Colour(0xFF161618));
             g.fillRoundedRectangle(bounds, 4.0f);
@@ -115,7 +115,7 @@ public:
             return;
         }
 
-        if (button.getToggleState())[cite: 6]
+        if (button.getToggleState())
         {
             juce::ColourGradient btnGrad(juce::Colour(0xFF2A2A32).withAlpha(0.5f), 0, 0, juce::Colour(0xFF1A1A20).withAlpha(0.5f), 0, bounds.getHeight(), false);
             g.setGradientFill(btnGrad);
@@ -139,7 +139,7 @@ public:
 
     void drawButtonText (juce::Graphics& g, juce::TextButton& button, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
     {
-        if (button.getName() == "SAVE" || button.getName() == "SETTINGS") return;[cite: 6]
+        if (button.getName() == "SAVE" || button.getName() == "SETTINGS") return;
         
         g.setFont(juce::FontOptions(11.0f).withName("Helvetica").withStyle(button.getToggleState() ? "Bold" : "Plain"));
         g.setColour(button.getToggleState() ? juce::Colours::white : juce::Colours::white.withAlpha(0.6f));
@@ -152,7 +152,7 @@ public:
     {
         // Track line
         g.setColour(juce::Colours::black.withAlpha(0.5f));
-        g.fillRect((float)x, (float)y + (float)height * 0.5f - 1.0f, (float)width, 2.0f);[cite: 6]
+        g.fillRect((float)x, (float)y + (float)height * 0.5f - 1.0f, (float)width, 2.0f);
 
         // Thumb Shadow & Glow
         g.setColour(juce::Colours::black.withAlpha(0.4f));
@@ -170,7 +170,7 @@ class HomeDistoAudioProcessorEditor  : public juce::AudioProcessorEditor,
                                        public juce::AudioProcessorValueTreeState::Listener
 {
 public:
-    HomeDistoAudioProcessorEditor (HomeDistoAudioProcessor&);[cite: 6]
+    HomeDistoAudioProcessorEditor (HomeDistoAudioProcessor&);
     ~HomeDistoAudioProcessorEditor() override;
 
     void paint (juce::Graphics&) override;
@@ -182,7 +182,7 @@ private:
     FlatGodLookAndFeel flatLaf;
 
     // Header UI
-    juce::ComboBox presetCombo;[cite: 6]
+    juce::ComboBox presetCombo;
     juce::TextButton saveButton;
     juce::TextButton settingsButton;
 
@@ -202,15 +202,15 @@ private:
     juce::Slider lowCutSlider;
     juce::Slider highCutSlider;
 
-    using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;[cite: 6]
+    using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
-    std::unique_ptr<SliderAttachment> driveAttach, outAttach, toneAttach, punchAttach, mixAttach;[cite: 6]
+    std::unique_ptr<SliderAttachment> driveAttach, outAttach, toneAttach, punchAttach, mixAttach;
     std::unique_ptr<SliderAttachment> lowAttach, highAttach;
     std::unique_ptr<ButtonAttachment> autoAttach;
 
     juce::String getFrequencyString(float hz);
-    void drawShadedCard(juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour baseColour);[cite: 6]
+    void drawShadedCard(juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour baseColour);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HomeDistoAudioProcessorEditor)
 };

@@ -2,9 +2,9 @@
 #include "PluginEditor.h"
 
 HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProcessor& p)
-    : AudioProcessorEditor (&p), audioProcessor (p)[cite: 5]
+    : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    juce::LookAndFeel::getDefaultLookAndFeel().setDefaultSansSerifTypefaceName("Helvetica");[cite: 5]
+    juce::LookAndFeel::getDefaultLookAndFeel().setDefaultSansSerifTypefaceName("Helvetica");
 
     setSize (720, 410);
     setLookAndFeel(&flatLaf); 
@@ -70,13 +70,13 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
 
 HomeDistoAudioProcessorEditor::~HomeDistoAudioProcessorEditor()
 {
-    audioProcessor.apvts.removeParameterListener("MODE", this);[cite: 5]
+    audioProcessor.apvts.removeParameterListener("MODE", this);
     setLookAndFeel(nullptr); 
 }
 
 void HomeDistoAudioProcessorEditor::parameterChanged (const juce::String& parameterID, float newValue)
 {
-    if (parameterID == "MODE")[cite: 5]
+    if (parameterID == "MODE")
     {
         juce::MessageManager::callAsync([this, newValue]() {
             modeButtons[(int)newValue].setToggleState(true, juce::dontSendNotification);
@@ -86,7 +86,7 @@ void HomeDistoAudioProcessorEditor::parameterChanged (const juce::String& parame
 
 juce::String HomeDistoAudioProcessorEditor::getFrequencyString(float hz)
 {
-    if (hz >= 1000.0f)[cite: 5]
+    if (hz >= 1000.0f)
         return juce::String(hz / 1000.0f, 1) + " kHz";
     return juce::String(juce::roundToInt(hz)) + " Hz";
 }
@@ -127,7 +127,7 @@ void HomeDistoAudioProcessorEditor::drawShadedCard(juce::Graphics& g, juce::Rect
 void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 {
     // Deep dark chassis background
-    g.fillAll (juce::Colour(0xFF09090B));[cite: 5]
+    g.fillAll (juce::Colour(0xFF09090B));
 
     // Main Housing Panel
     g.setColour(juce::Colour(0xFF111114));
@@ -238,7 +238,7 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 void HomeDistoAudioProcessorEditor::resized()
 {
     // Header
-    presetCombo.setBounds(210, 20, 300, 30);[cite: 5]
+    presetCombo.setBounds(210, 20, 300, 30);
     saveButton.setBounds(620, 20, 30, 30); 
     settingsButton.setBounds(660, 20, 30, 30); 
 
