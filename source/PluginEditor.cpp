@@ -4,8 +4,8 @@
 HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    setSize (420, 500);
-    setLookAndFeel(&flatLookAndFeel);
+    setSize (800, 600);
+    setLookAndFeel(&flatLaf);
 
     auto setupKnob = [this](juce::Slider& slider, const juce::String& paramID, std::unique_ptr<SliderAttachment>& attach) {
         slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -15,21 +15,20 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     };
 
     setupKnob(driveKnob, "DRIVE", driveAttach);
-    setupKnob(lowCutKnob, "LOW_CUT", lowAttach);
-    setupKnob(highCutKnob, "HIGH_CUT", highAttach);
+    setupKnob(topOutKnob, "OUT", outAttach); 
     setupKnob(toneKnob, "TONE", toneAttach);
     setupKnob(punchKnob, "PUNCH", punchAttach);
-    setupKnob(textureKnob, "TEXTURE", textureAttach);
     setupKnob(mixKnob, "MIX", mixAttach);
-    setupKnob(outputKnob, "OUT", outAttach);
-
-    algoSelector.addItemList({"Warm", "Punch", "Tape", "Digital", "Fuzz"}, 1);
-    addAndMakeVisible(algoSelector);
-    algoAttach = std::make_unique<ComboBoxAttachment>(audioProcessor.apvts, "ALGO", algoSelector);
 
     autoToggle.setButtonText("AUTO");
+    autoToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFFA855F7));
     addAndMakeVisible(autoToggle);
     autoAttach = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "AUTO", autoToggle);
+
+    modeCombo.addItemList({"PUNCH", "TUBE", "TAPE", "DIGITAL"}, 1);
+    modeCombo.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(modeCombo);
+    modeAttach = std::make_unique<ComboBoxAttachment>(audioProcessor.apvts, "MODE", modeCombo);
 }
 
 HomeDistoAudioProcessorEditor::~HomeDistoAudioProcessorEditor()
@@ -39,58 +38,91 @@ HomeDistoAudioProcessorEditor::~HomeDistoAudioProcessorEditor()
 
 void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    // Flat solid background
-    g.fillAll (juce::Colour(0xFF1A1A1E)); 
+    // Flat Dark Background
+    g.fillAll (juce::Colour(0xFF101012)); 
 
-    // Header Panel
-    g.setColour(juce::Colour(0xFF242429));
-    g.fillRoundedRectangle(10, 10, 400, 40, 5);
-    
-    g.setColour(juce::Colour(0xFFFF6B35));
-    g.setFont(juce::FontOptions(16.0f).withStyle("Bold"));
-    g.drawText("Dubtach", 20, 10, 100, 40, juce::Justification::centredLeft);
-    
-    g.setColour(juce::Colour(0xFF888890));
+    // Inner Plugin Bezel (Solid Flat Shape)
+    g.setColour(juce::Colour(0xFF18181A));
+    g.fillRoundedRectangle(20, 20, 760, 560, 16);
+    g.setColour(juce::Colour(0xFF202024));
+    g.drawRoundedRectangle(20, 20, 760, 560, 16, 2.0f);
+
+    // --- Header Section ---
+    g.setColour(juce::Colours::white);
+    g.setFont(juce::FontOptions(28.0f).withStyle("Bold"));
+    g.drawText("GOD", 50, 40, 150, 30, juce::Justification::centredLeft);
+    g.setColour(juce::Colour(0xFFA855F7));
+    g.setFont(juce::FontOptions(14.0f).withStyle("Bold"));
+    g.drawText("DISTORTION", 50, 70, 150, 20, juce::Justification::centredLeft);
+
+    // Preset Bar Placeholder
+    g.setColour(juce::Colour(0xFF101012));
+    g.fillRoundedRectangle(280, 40, 240, 40, 6);
+    g.setColour(juce::Colours::white);
+    g.drawText("<    Huge Punch    >", 280, 40, 240, 40, juce::Justification::centred);
+
+    // --- Labels ---
+    g.setColour(juce::Colour(0xFFAAAAAA));
     g.setFont(juce::FontOptions(14.0f));
-    g.drawText("Home:Disto", 120, 10, 100, 40, juce::Justification::centredLeft);
+    g.drawText("MODE", 50, 120, 180, 20, juce::Justification::centred);
+    g.drawText("DRIVE", 300, 120, 200, 20, juce::Justification::centred);
+    g.drawText("MIX", 580, 120, 150, 20, juce::Justification::centred); // Top knob
 
-    // Text Labels 
-    g.setColour (juce::Colour(0xFF888890));
-    g.setFont (12.0f);
+    // Lower Panel Areas (Solid flat grouping boxes)
+    g.setColour(juce::Colour(0xFF101012));
+    g.fillRoundedRectangle(40, 340, 340, 160, 8); // Filter Box
     
-    g.drawText("DRIVE",     160, 150, 100, 20, juce::Justification::centred);
-    g.drawText("Low Cut",   60,  240, 80, 20,  juce::Justification::centred);
-    g.drawText("High Cut",  280, 240, 80, 20,  juce::Justification::centred);
-    
-    g.drawText("Tone",      60,  340, 80, 20,  juce::Justification::centred);
-    g.drawText("Punch",     170, 340, 80, 20,  juce::Justification::centred);
-    g.drawText("Texture",   280, 340, 80, 20,  juce::Justification::centred);
-    
-    g.drawText("Mix",       60,  440, 80, 20,  juce::Justification::centred);
-    g.drawText("Output",    170, 440, 80, 20,  juce::Justification::centred);
-    g.drawText("Auto",      280, 440, 80, 20,  juce::Justification::centred);
+    // Filter Graph Line (2D Graphic)
+    g.setColour(juce::Colour(0xFF2A2A30));
+    g.drawLine(60, 450, 360, 450, 2.0f);
+    juce::Path filterCurve;
+    filterCurve.startNewSubPath(60, 490);
+    filterCurve.cubicTo(120, 490, 100, 410, 160, 410);
+    filterCurve.lineTo(260, 410);
+    filterCurve.cubicTo(320, 410, 300, 490, 360, 490);
+    g.setColour(juce::Colour(0xFFA855F7));
+    g.strokePath(filterCurve, juce::PathStrokeType(2.0f));
 
-    // Simulated 2D curve between filters
-    g.setColour(juce::Colour(0xFFFF6B35));
-    juce::Path curve;
-    curve.startNewSubPath(130, 280);
-    curve.quadraticTo(210, 210, 290, 280);
-    g.strokePath(curve, juce::PathStrokeType(2.0f));
+    g.setColour(juce::Colour(0xFFAAAAAA));
+    g.drawText("FILTER", 40, 350, 340, 20, juce::Justification::centred);
+    g.setColour(juce::Colour(0xFFA855F7));
+    g.drawText("LOW CUT", 60, 380, 80, 20, juce::Justification::left);
+    g.drawText("HIGH CUT", 280, 380, 80, 20, juce::Justification::right);
+    g.setColour(juce::Colours::white);
+    g.drawText("120 Hz", 60, 400, 80, 20, juce::Justification::left);
+    g.drawText("8.5 kHz", 280, 400, 80, 20, juce::Justification::right);
+
+    // Bottom Right Knobs Labels
+    g.setColour(juce::Colour(0xFFAAAAAA));
+    g.drawText("TONE",  430, 360, 80, 20, juce::Justification::centred);
+    g.drawText("PUNCH", 540, 360, 80, 20, juce::Justification::centred);
+    g.drawText("MIX",   650, 360, 80, 20, juce::Justification::centred);
+
+    g.setFont(juce::FontOptions(10.0f));
+    g.drawText("DARK       BRIGHT", 430, 470, 80, 20, juce::Justification::centred);
+    g.drawText("SOFT       HARD", 540, 470, 80, 20, juce::Justification::centred);
+    g.drawText("DRY       WET", 650, 470, 80, 20, juce::Justification::centred);
+
+    // --- Footer ---
+    g.setColour(juce::Colour(0xFF444444));
+    g.setFont(juce::FontOptions(14.0f).withStyle("Bold"));
+    g.drawText("SERIOUS DISTORTION. ZERO COMPLEXITY.", 200, 530, 400, 20, juce::Justification::centred);
+    g.drawText("ASONG AUDIO", 600, 530, 150, 20, juce::Justification::centredRight);
 }
 
 void HomeDistoAudioProcessorEditor::resized()
 {
-    driveKnob.setBounds(160, 70, 100, 100);
-    algoSelector.setBounds(40, 180, 340, 24);
+    modeCombo.setBounds(50, 150, 180, 40);
     
-    lowCutKnob.setBounds(60, 260, 80, 80);
-    highCutKnob.setBounds(280, 260, 80, 80);
-    
-    toneKnob.setBounds(60, 360, 80, 80);
-    punchKnob.setBounds(170, 360, 80, 80);
-    textureKnob.setBounds(280, 360, 80, 80);
-    
-    mixKnob.setBounds(60, 460, 40, 40);
-    outputKnob.setBounds(170, 460, 40, 40);
-    autoToggle.setBounds(300, 460, 40, 40);
+    // Main Drive
+    driveKnob.setBounds(300, 150, 200, 200);
+
+    // Top Right
+    topOutKnob.setBounds(610, 150, 90, 90);
+    autoToggle.setBounds(610, 260, 90, 30);
+
+    // Bottom Right Knobs
+    toneKnob.setBounds(430, 390, 80, 80);
+    punchKnob.setBounds(540, 390, 80, 80);
+    mixKnob.setBounds(650, 390, 80, 80);
 }

@@ -21,21 +21,20 @@ juce::AudioProcessorValueTreeState::ParameterLayout HomeDistoAudioProcessor::cre
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
     
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("DRIVE", "Drive", 0.0f, 10.0f, 5.0f));
-    
-    juce::StringArray algos = { "Warm", "Punch", "Tape", "Digital", "Fuzz" };
-    params.push_back(std::make_unique<juce::AudioParameterChoice>("ALGO", "Algorithm", algos, 0));
-    
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("LOW_CUT", "Low Cut", 20.0f, 1000.0f, 20.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("HIGH_CUT", "High Cut", 1000.0f, 20000.0f, 20000.0f));
-    
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("TONE", "Tone", -10.0f, 10.0f, 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("PUNCH", "Punch", 0.0f, 10.0f, 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("TEXTURE", "Texture", 0.0f, 10.0f, 0.0f));
-    
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("MIX", "Mix", 0.0f, 1.0f, 1.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("OUT", "Output", -24.0f, 12.0f, 0.0f));
+    // Main Controls
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("DRIVE", "Drive", 0.0f, 24.0f, 6.7f));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("MODE", "Mode", juce::StringArray{"TUBE", "TAPE", "WAVE", "DIGITAL"}, 0));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("OUT", "Output", -24.0f, 24.0f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterBool>("AUTO", "Auto", false));
+
+    // Filter Section
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("LOW_CUT", "Low Cut", 20.0f, 1000.0f, 120.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("HIGH_CUT", "High Cut", 1000.0f, 20000.0f, 8500.0f));
+
+    // Bottom Controls
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("TONE", "Tone", -1.0f, 1.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("PUNCH", "Punch", 0.0f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("MIX", "Mix", 0.0f, 1.0f, 0.5f));
 
     return { params.begin(), params.end() };
 }
@@ -49,6 +48,7 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
 
     lowCutFilter.prepare(spec);
     highCutFilter.prepare(spec);
+    toneFilter.prepare(spec);
 }
 
 void HomeDistoAudioProcessor::releaseResources() {}
@@ -70,38 +70,51 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    // Fetch parameters
-    float drive = apvts.getRawParameterValue("DRIVE")->load();
+    // Fetch Parameters
+    float driveDb = apvts.getRawParameterValue("DRIVE")->load();
+    float driveGain = juce::Decibels::decibelsToGain(driveDb);
     float lowCut = apvts.getRawParameterValue("LOW_CUT")->load();
     float highCut = apvts.getRawParameterValue("HIGH_CUT")->load();
+    float tone = apvts.getRawParameterValue("TONE")->load();
     float mix = apvts.getRawParameterValue("MIX")->load();
-    float outVol = apvts.getRawParameterValue("OUT")->load();
+    float outDb = apvts.getRawParameterValue("OUT")->load();
+    float outGain = juce::Decibels::decibelsToGain(outDb);
 
-    // Update Filter Coefficients
+    // Update Filters
     *lowCutFilter.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(getSampleRate(), lowCut);
     *highCutFilter.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(getSampleRate(), highCut);
+    
+    // Simple Tilt for Tone
+    float toneFreq = 1000.0f; 
+    float toneDb = tone * 6.0f; // +/- 6dB swing
+    *toneFilter.state = *juce::dsp::IIR::Coefficients<float>::makeHighShelf(getSampleRate(), toneFreq, 0.707f, juce::Decibels::decibelsToGain(toneDb));
 
     juce::AudioBuffer<float> dryBuffer;
     dryBuffer.makeCopyOf(buffer);
 
-    // 1. Basic Distortion Pass (Placeholder for algorithms)
+    // DSP Process
+    juce::dsp::AudioBlock<float> block (buffer);
+    juce::dsp::ProcessContextReplacing<float> context (block);
+
+    // Pre-Filter (Low/High Cut)
+    lowCutFilter.process(context);
+    highCutFilter.process(context);
+
+    // Drive Stage
     for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
         auto* channelData = buffer.getWritePointer(channel);
         for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
         {
-            channelData[sample] = std::tanh(channelData[sample] * (1.0f + drive));
+            // Basic Waveshaper
+            channelData[sample] = std::tanh(channelData[sample] * driveGain);
         }
     }
 
-    // 2. Filters
-    juce::dsp::AudioBlock<float> block (buffer);
-    juce::dsp::ProcessContextReplacing<float> context (block);
-    lowCutFilter.process(context);
-    highCutFilter.process(context);
+    // Post-Filter (Tone)
+    toneFilter.process(context);
 
-    // 3. Dry/Wet Mix & Output Gain
-    float outGainLinear = juce::Decibels::decibelsToGain(outVol);
+    // Mix & Output
     for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
         auto* channelData = buffer.getWritePointer(channel);
@@ -111,7 +124,7 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         {
             float wetSignal = channelData[sample];
             float drySignal = dryData[sample];
-            channelData[sample] = (drySignal * (1.0f - mix) + wetSignal * mix) * outGainLinear;
+            channelData[sample] = (drySignal * (1.0f - mix) + wetSignal * mix) * outGain;
         }
     }
 }
