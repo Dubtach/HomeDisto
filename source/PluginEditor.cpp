@@ -7,7 +7,7 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     juce::LookAndFeel::getDefaultLookAndFeel().setDefaultSansSerifTypefaceName("Helvetica");
 
     setSize (720, 410);
-    setLookAndFeel(&flatLaf); 
+    setLookAndFeel(&modernLaf); 
 
     presetCombo.addItemList({"Huge Punch", "Tape Saturation", "Digital Crush", "Warm Tube", "Heavy Fuzz"}, 1);
     presetCombo.setSelectedId(1, juce::dontSendNotification);
@@ -91,37 +91,31 @@ juce::String HomeDistoAudioProcessorEditor::getFrequencyString(float hz)
     return juce::String(juce::roundToInt(hz)) + " Hz";
 }
 
-// Helper to render rich shaded cards with soft drop shadows, inner bevels, and premium textures
 void HomeDistoAudioProcessorEditor::drawShadedCard(juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour baseColour)
 {
-    // 1. Enhanced 3D Drop Shadows
-    for (int i = 1; i <= 8; ++i)
+    // 1. Sharp, deep drop shadows to pop the card forward
+    for (int i = 1; i <= 7; ++i)
     {
-        g.setColour(juce::Colours::black.withAlpha(0.08f * (9 - i)));
-        g.fillRoundedRectangle(bounds.expanded((float)i * 0.5f).translated(0.0f, 2.0f + i * 0.6f), 10.0f);
+        g.setColour(juce::Colours::black.withAlpha(0.12f * (8 - i)));
+        g.fillRoundedRectangle(bounds.expanded((float)i * 0.4f).translated(0.0f, 2.0f + i * 0.5f), 8.0f);
     }
 
-    // 2. Rich Vertical Gradient (Base is brightened per requirements)
-    juce::ColourGradient grad(baseColour.brighter(0.2f), bounds.getX(), bounds.getY(),
-                               baseColour.darker(0.15f), bounds.getX(), bounds.getBottom(), false);
+    // 2. High-saturation vibrant gradient (no bright white overlays that wash it out)
+    juce::ColourGradient grad(baseColour, bounds.getX(), bounds.getY(),
+                               baseColour.darker(0.25f), bounds.getX(), bounds.getBottom(), false);
     g.setGradientFill(grad);
-    g.fillRoundedRectangle(bounds, 8.0f);
+    g.fillRoundedRectangle(bounds, 6.0f);
 
-    // 3. Premium Grid/Mesh Texture Overlay
-    // Draws a subtle intersecting pattern to emulate hardware casing
-    g.setColour(juce::Colours::black.withAlpha(0.05f));
+    // 3. Very subtle mesh texture so we don't muddy the bright color
+    g.setColour(juce::Colours::black.withAlpha(0.04f));
     for (float y = bounds.getY() + 4.0f; y < bounds.getBottom() - 2.0f; y += 4.0f)
-        g.drawLine(bounds.getX() + 2.0f, y, bounds.getRight() - 2.0f, y, 1.5f);
+        g.drawLine(bounds.getX() + 2.0f, y, bounds.getRight() - 2.0f, y, 1.0f);
     for (float x = bounds.getX() + 4.0f; x < bounds.getRight() - 2.0f; x += 4.0f)
-        g.drawLine(x, bounds.getY() + 2.0f, x, bounds.getBottom() - 2.0f, 1.5f);
+        g.drawLine(x, bounds.getY() + 2.0f, x, bounds.getBottom() - 2.0f, 1.0f);
 
-    // 4. Subtle Inner Highlight Line (Top Bevel for 3D edge catch)
-    g.setColour(juce::Colours::white.withAlpha(0.35f));
-    g.drawRoundedRectangle(bounds.reduced(0.5f), 8.0f, 1.5f);
-
-    // 5. Dark Outer Border Line
+    // 4. Clean dark border to contain the bright color
     g.setColour(juce::Colours::black.withAlpha(0.40f));
-    g.drawRoundedRectangle(bounds, 8.0f, 1.5f);
+    g.drawRoundedRectangle(bounds, 6.0f, 1.5f);
 }
 
 void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
@@ -147,30 +141,30 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawLine(25, 65, 695, 65, 2.0f); 
 
     // ==========================================
-    // DISTINCT SHADED CARDS WITH BRIGHTER COLORS
+    // ULTRA-VIBRANT COLOR PALETTE
     // ==========================================
     
-    // Card 1: MODES Section (Brighter Green)
-    drawShadedCard(g, juce::Rectangle<float>(20, 80, 230, 175), juce::Colour(0xFF4A9E48));
+    // Card 1: MODES Section (Neon Emerald Green)
+    drawShadedCard(g, juce::Rectangle<float>(20, 80, 230, 175), juce::Colour(0xFF00E65C));
 
-    // Card 2: FILTER Section (Brighter Amber/Gold)
-    drawShadedCard(g, juce::Rectangle<float>(20, 265, 230, 125), juce::Colour(0xFFFFD54F));
+    // Card 2: FILTER Section (Vibrant Gold/Yellow)
+    drawShadedCard(g, juce::Rectangle<float>(20, 265, 230, 125), juce::Colour(0xFFFFCC00));
 
-    // Card 3: DRIVE / TONE / PUNCH Section (Brighter Burnt Orange)
-    drawShadedCard(g, juce::Rectangle<float>(260, 80, 260, 310), juce::Colour(0xFFFF8F66));
+    // Card 3: DRIVE / TONE / PUNCH Section (Vibrant Orange)
+    drawShadedCard(g, juce::Rectangle<float>(260, 80, 260, 310), juce::Colour(0xFFFF5500));
 
-    // Card 4: OUTPUT / MIX Section (Brighter Red)
-    drawShadedCard(g, juce::Rectangle<float>(530, 80, 170, 310), juce::Colour(0xFFD93838));
+    // Card 4: OUTPUT / MIX Section (Vibrant Crimson Red)
+    drawShadedCard(g, juce::Rectangle<float>(530, 80, 170, 310), juce::Colour(0xFFFF1A40));
 
     // ==========================================
-    // TEXT LABELS & OVERLAYS (Engraved Dark Text)
+    // TEXT LABELS & OVERLAYS 
     // ==========================================
     
-    // Helper lambda to draw dark text with a white drop shadow (Engraved 3D look)
-    auto drawEngravedText = [&](const juce::String& text, int x, int y, int w, int h, juce::Justification just, float alpha = 0.85f) {
-        g.setColour(juce::Colours::white.withAlpha(0.4f));     // Bottom highlight
+    // Increased dark text alpha so it stays legible against the ultra-bright backgrounds
+    auto drawEngravedText = [&](const juce::String& text, int x, int y, int w, int h, juce::Justification just, float alpha = 0.90f) {
+        g.setColour(juce::Colours::white.withAlpha(0.35f));    
         g.drawText(text, x, y + 1, w, h, just);
-        g.setColour(juce::Colours::black.withAlpha(alpha));    // Dark foreground
+        g.setColour(juce::Colours::black.withAlpha(alpha));    
         g.drawText(text, x, y, w, h, just);
     };
 
@@ -183,11 +177,11 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     drawEngravedText("FILTER", 20, 273, 230, 20, juce::Justification::centred);
 
     g.setFont(juce::FontOptions(10.0f).withName("Helvetica").withStyle("Bold"));
-    drawEngravedText("LOW CUT", 35, 295, 80, 15, juce::Justification::left, 0.75f);
-    drawEngravedText("HIGH CUT", 155, 295, 80, 15, juce::Justification::right, 0.75f);
+    drawEngravedText("LOW CUT", 35, 295, 80, 15, juce::Justification::left, 0.85f);
+    drawEngravedText("HIGH CUT", 155, 295, 80, 15, juce::Justification::right, 0.85f);
     
-    drawEngravedText(getFrequencyString(lowCutSlider.getValue()), 35, 310, 80, 15, juce::Justification::left, 0.9f); 
-    drawEngravedText(getFrequencyString(highCutSlider.getValue()), 155, 310, 80, 15, juce::Justification::right, 0.9f); 
+    drawEngravedText(getFrequencyString(lowCutSlider.getValue()), 35, 310, 80, 15, juce::Justification::left, 0.95f); 
+    drawEngravedText(getFrequencyString(highCutSlider.getValue()), 155, 310, 80, 15, juce::Justification::right, 0.95f); 
 
     // Mini filter graph aligned with sliders
     float lowProp = lowCutSlider.valueToProportionOfLength(lowCutSlider.getValue());
@@ -205,11 +199,10 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     filterCurve.lineTo(highX, graphY);
     filterCurve.cubicTo(highX + 6, graphY, highX + 6, 375, 235, 375);
     
-    // Graph line with Engraved Shadow
     g.setColour(juce::Colours::white.withAlpha(0.3f));
     g.strokePath(filterCurve, juce::PathStrokeType(2.0f), juce::AffineTransform::translation(0, 1.0f));
-    g.setColour(juce::Colour(0xFF202020));
-    g.strokePath(filterCurve, juce::PathStrokeType(2.0f)); 
+    g.setColour(juce::Colour(0xFF151515));
+    g.strokePath(filterCurve, juce::PathStrokeType(2.5f)); 
 
     // --- CARD 3: DRIVE, TONE, PUNCH ---
     g.setFont(juce::FontOptions(13.0f).withName("Helvetica").withStyle("Bold"));
@@ -219,10 +212,10 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 
     // Descriptors
     g.setFont(juce::FontOptions(9.0f).withName("Helvetica").withStyle("Bold"));
-    drawEngravedText("DARK",  275, 360, 40, 15, juce::Justification::left, 0.65f);
-    drawEngravedText("BRIGHT", 335, 360, 40, 15, juce::Justification::right, 0.65f);
-    drawEngravedText("SOFT",  405, 360, 40, 15, juce::Justification::left, 0.65f);
-    drawEngravedText("HARD",   465, 360, 40, 15, juce::Justification::right, 0.65f);
+    drawEngravedText("DARK",  275, 360, 40, 15, juce::Justification::left, 0.8f);
+    drawEngravedText("BRIGHT", 335, 360, 40, 15, juce::Justification::right, 0.8f);
+    drawEngravedText("SOFT",  405, 360, 40, 15, juce::Justification::left, 0.8f);
+    drawEngravedText("HARD",   465, 360, 40, 15, juce::Justification::right, 0.8f);
 
     // --- CARD 4: OUTPUT, MIX ---
     g.setFont(juce::FontOptions(13.0f).withName("Helvetica").withStyle("Bold"));
@@ -231,8 +224,8 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 
     // Descriptors
     g.setFont(juce::FontOptions(9.0f).withName("Helvetica").withStyle("Bold"));
-    drawEngravedText("DRY", 565, 360, 30, 15, juce::Justification::left, 0.65f);
-    drawEngravedText("WET", 635, 360, 30, 15, juce::Justification::right, 0.65f);
+    drawEngravedText("DRY", 565, 360, 30, 15, juce::Justification::left, 0.8f);
+    drawEngravedText("WET", 635, 360, 30, 15, juce::Justification::right, 0.8f);
 }
 
 void HomeDistoAudioProcessorEditor::resized()
