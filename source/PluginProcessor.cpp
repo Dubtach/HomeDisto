@@ -21,17 +21,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout HomeDistoAudioProcessor::cre
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
     
-    // Main Controls
     params.push_back(std::make_unique<juce::AudioParameterFloat>("DRIVE", "Drive", 0.0f, 24.0f, 6.7f));
-    params.push_back(std::make_unique<juce::AudioParameterChoice>("MODE", "Mode", juce::StringArray{"TUBE", "TAPE", "WAVE", "DIGITAL"}, 0));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("MODE", "Mode", juce::StringArray{"PUNCH", "TUBE", "TAPE", "DIGITAL"}, 0));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("OUT", "Output", -24.0f, 24.0f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterBool>("AUTO", "Auto", false));
 
-    // Filter Section
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("LOW_CUT", "Low Cut", 20.0f, 1000.0f, 120.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("HIGH_CUT", "High Cut", 1000.0f, 20000.0f, 8500.0f));
+    // Added Skew (logarithmic feel) to frequency bands for smoother dragging
+    juce::NormalisableRange<float> lowRange(20.0f, 1000.0f, 1.0f, 0.3f);
+    juce::NormalisableRange<float> highRange(1000.0f, 20000.0f, 10.0f, 0.3f);
+    
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("LOW_CUT", "Low Cut", lowRange, 120.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("HIGH_CUT", "High Cut", highRange, 8500.0f));
 
-    // Bottom Controls
     params.push_back(std::make_unique<juce::AudioParameterFloat>("TONE", "Tone", -1.0f, 1.0f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("PUNCH", "Punch", 0.0f, 1.0f, 0.5f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("MIX", "Mix", 0.0f, 1.0f, 0.5f));
@@ -70,7 +71,6 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    // Fetch Parameters
     float driveDb = apvts.getRawParameterValue("DRIVE")->load();
     float driveGain = juce::Decibels::decibelsToGain(driveDb);
     float lowCut = apvts.getRawParameterValue("LOW_CUT")->load();
@@ -80,41 +80,33 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     float outDb = apvts.getRawParameterValue("OUT")->load();
     float outGain = juce::Decibels::decibelsToGain(outDb);
 
-    // Update Filters
-    *lowCutFilter.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(getSampleRate(), lowCut);
-    *highCutFilter.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(getSampleRate(), highCut);
+    *lowCutFilter.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(getSampleRate(), juce::jmax(20.0f, lowCut));
+    *highCutFilter.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(getSampleRate(), juce::jmin(20000.0f, highCut));
     
-    // Simple Tilt for Tone
     float toneFreq = 1000.0f; 
-    float toneDb = tone * 6.0f; // +/- 6dB swing
+    float toneDb = tone * 6.0f; 
     *toneFilter.state = *juce::dsp::IIR::Coefficients<float>::makeHighShelf(getSampleRate(), toneFreq, 0.707f, juce::Decibels::decibelsToGain(toneDb));
 
     juce::AudioBuffer<float> dryBuffer;
     dryBuffer.makeCopyOf(buffer);
 
-    // DSP Process
     juce::dsp::AudioBlock<float> block (buffer);
     juce::dsp::ProcessContextReplacing<float> context (block);
 
-    // Pre-Filter (Low/High Cut)
     lowCutFilter.process(context);
     highCutFilter.process(context);
 
-    // Drive Stage
     for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
         auto* channelData = buffer.getWritePointer(channel);
         for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
         {
-            // Basic Waveshaper
             channelData[sample] = std::tanh(channelData[sample] * driveGain);
         }
     }
 
-    // Post-Filter (Tone)
     toneFilter.process(context);
 
-    // Mix & Output
     for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
         auto* channelData = buffer.getWritePointer(channel);

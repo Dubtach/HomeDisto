@@ -2,16 +2,14 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
-// Flat 2D LookAndFeel matching the Mockup Colors
+// Improved Flat 2D LookAndFeel
 class FlatGodLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
     FlatGodLookAndFeel()
     {
-        // Purple Accent: #A855F7, Dark Bg: #18181A
         setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xFFA855F7)); 
         setColour(juce::Slider::trackColourId, juce::Colour(0xFF2A2A30));
-        setColour(juce::Slider::thumbColourId, juce::Colours::transparentWhite);
     }
 
     void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height, 
@@ -26,34 +24,85 @@ public:
         auto rw = radius * 2.0f;
         auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
 
-        // Solid flat base circle
-        g.setColour(juce::Colour(0xFF141416));
+        // 1. Base ring (Dark outline for 2D separation)
+        g.setColour(juce::Colour(0xFF101012));
+        g.fillEllipse(rx - 2, ry - 2, rw + 4, rw + 4);
+
+        // 2. Main Body
+        g.setColour(juce::Colour(0xFF161618));
         g.fillEllipse(rx, ry, rw, rw);
 
-        // Solid Track Arc
+        // 3. Inner Cap (gives the knob flat depth)
+        auto capRadius = radius * 0.85f;
+        g.setColour(juce::Colour(0xFF1E1E22));
+        g.fillEllipse(centreX - capRadius, centreY - capRadius, capRadius * 2, capRadius * 2);
+        
+        g.setColour(juce::Colour(0xFF2A2A30));
+        g.drawEllipse(centreX - capRadius, centreY - capRadius, capRadius * 2, capRadius * 2, 1.0f);
+
+        // 4. Solid Track Arc
         juce::Path trackArc;
-        trackArc.addCentredArc(centreX, centreY, radius, radius, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
+        trackArc.addCentredArc(centreX, centreY, radius + 2.0f, radius + 2.0f, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
         g.setColour(findColour(juce::Slider::trackColourId));
-        g.strokePath(trackArc, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.strokePath(trackArc, juce::PathStrokeType(3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        // Solid Fill Arc (Purple LED Ring)
+        // 5. Fill Arc (Purple)
         juce::Path fillArc;
-        fillArc.addCentredArc(centreX, centreY, radius, radius, 0.0f, rotaryStartAngle, angle, true);
+        fillArc.addCentredArc(centreX, centreY, radius + 2.0f, radius + 2.0f, 0.0f, rotaryStartAngle, angle, true);
         g.setColour(findColour(juce::Slider::rotarySliderFillColourId));
-        g.strokePath(fillArc, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.strokePath(fillArc, juce::PathStrokeType(3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        // Indicator Line
+        // 6. Indicator Line
         juce::Path p;
-        auto pointerLength = radius * 0.6f;
-        auto pointerThickness = 2.0f;
-        p.addRectangle(-pointerThickness * 0.5f, -pointerLength, pointerThickness, pointerLength);
+        auto pointerLength = capRadius * 0.6f;
+        p.addRoundedRectangle(-1.5f, -capRadius + 4.0f, 3.0f, pointerLength, 1.5f);
         p.applyTransform(juce::AffineTransform::rotation(angle).translated(centreX, centreY));
-        g.setColour(juce::Colours::white);
+        g.setColour(juce::Colour(0xFFA855F7));
         g.fillPath(p);
+    }
+
+    // Flat Styling for Mode List Buttons
+    void drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour& backgroundColour,
+                               bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
+    {
+        auto bounds = button.getLocalBounds().toFloat();
+        if (button.getToggleState())
+        {
+            g.setColour(juce::Colour(0xFF1E1E22));
+            g.fillRoundedRectangle(bounds, 4.0f);
+            
+            // Left purple accent
+            g.setColour(juce::Colour(0xFFA855F7));
+            g.fillRoundedRectangle(0, 0, 4.0f, bounds.getHeight(), 2.0f);
+        }
+        else if (shouldDrawButtonAsHighlighted)
+        {
+            g.setColour(juce::Colour(0xFF161618));
+            g.fillRoundedRectangle(bounds, 4.0f);
+        }
+    }
+
+    void drawButtonText (juce::Graphics& g, juce::TextButton& button, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
+    {
+        g.setFont(juce::FontOptions(13.0f).withStyle(button.getToggleState() ? "Bold" : "Plain"));
+        g.setColour(button.getToggleState() ? juce::Colour(0xFFA855F7) : juce::Colour(0xFF888888));
+        g.drawText(button.getButtonText(), button.getLocalBounds().withTrimmedLeft(10), juce::Justification::centredLeft);
+    }
+
+    // Invisible track for filter sliders, only draw the draggable node
+    void drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
+                           float sliderPos, float minSliderPos, float maxSliderPos,
+                           const juce::Slider::SliderStyle style, juce::Slider& slider) override
+    {
+        g.setColour(juce::Colour(0xFFA855F7));
+        g.fillEllipse(sliderPos - 6.0f, (float)y + (float)height * 0.5f - 6.0f, 12.0f, 12.0f);
+        g.setColour(juce::Colours::white);
+        g.drawEllipse(sliderPos - 6.0f, (float)y + (float)height * 0.5f - 6.0f, 12.0f, 12.0f, 1.5f);
     }
 };
 
-class HomeDistoAudioProcessorEditor  : public juce::AudioProcessorEditor
+class HomeDistoAudioProcessorEditor  : public juce::AudioProcessorEditor,
+                                       public juce::AudioProcessorValueTreeState::Listener
 {
 public:
     HomeDistoAudioProcessorEditor (HomeDistoAudioProcessor&);
@@ -61,33 +110,37 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    void parameterChanged (const juce::String& parameterID, float newValue) override;
 
 private:
     HomeDistoAudioProcessor& audioProcessor;
     FlatGodLookAndFeel flatLaf;
 
-    // UI Elements
+    // Main Knobs
     juce::Slider driveKnob;
-    juce::Slider topOutKnob; // Labeled "MIX" in mockup, controls output trim conceptually 
+    juce::Slider outputKnob; 
     juce::Slider toneKnob;
     juce::Slider punchKnob;
     juce::Slider mixKnob;
 
     juce::ToggleButton autoToggle;
-    juce::ComboBox modeCombo;
     
-    // Filter controls (invisible sliders mapped to the graph area conceptually)
+    // Mode List
+    juce::TextButton modeButtons[4];
+    juce::StringArray modeNames = { "PUNCH", "TUBE", "TAPE", "DIGITAL" };
+    
+    // Interactive Filter Sliders
     juce::Slider lowCutSlider;
     juce::Slider highCutSlider;
 
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
-    using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
 
     std::unique_ptr<SliderAttachment> driveAttach, outAttach, toneAttach, punchAttach, mixAttach;
     std::unique_ptr<SliderAttachment> lowAttach, highAttach;
     std::unique_ptr<ButtonAttachment> autoAttach;
-    std::unique_ptr<ComboBoxAttachment> modeAttach;
+
+    juce::String getFrequencyString(float hz);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HomeDistoAudioProcessorEditor)
 };
