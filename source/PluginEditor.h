@@ -2,7 +2,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
-// Rich Tactile LookAndFeel with Depth & Shading[cite: 11]
+// Rich Tactile LookAndFeel with Depth, Gloss, & Metallic Shading[cite: 6]
 class FlatGodLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
@@ -26,45 +26,53 @@ public:
         auto centreY = (float) y + (float) height * 0.5f;
         auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
 
-        // 1. Knob Drop Shadow[cite: 11]
-        for (int i = 1; i <= 4; ++i)
+        // 1. Deep 3D Drop Shadow for Knobs
+        for (int i = 1; i <= 7; ++i)
         {
-            g.setColour(juce::Colours::black.withAlpha(0.15f * (5 - i)));
-            g.fillEllipse(centreX - radius - i, centreY - radius + (i * 0.8f), radius * 2.0f + (i * 2), radius * 2.0f + (i * 2));
+            g.setColour(juce::Colours::black.withAlpha(0.15f * (8 - i)));
+            g.fillEllipse(centreX - radius - (i * 0.5f), centreY - radius + (i * 1.5f), radius * 2.0f + i, radius * 2.0f + i);
         }
 
-        // 2. Outer Bevel Ring (3D Gradient)
-        juce::ColourGradient ringGrad(juce::Colour(0xFF383842), centreX, centreY - radius,
-                                       juce::Colour(0xFF121216), centreX, centreY + radius, false);
+        // 2. Premium Metallic Outer Bevel Ring
+        juce::ColourGradient ringGrad(juce::Colour(0xFFE5E5E5), centreX, centreY - radius,
+                                       juce::Colour(0xFF555555), centreX, centreY + radius, false);
         g.setGradientFill(ringGrad);
         g.fillEllipse(centreX - radius, centreY - radius, radius * 2, radius * 2);
 
-        // 3. Shaded Knob Cap
-        auto capRadius = radius * 0.82f;
-        juce::ColourGradient capGrad(juce::Colour(0xFF282830), centreX, centreY - capRadius,
-                                      juce::Colour(0xFF0F0F12), centreX, centreY + capRadius, false);
+        // 3. Inner Glossy Dark Cap
+        auto capRadius = radius * 0.85f;
+        juce::ColourGradient capGrad(juce::Colour(0xFF353540), centreX, centreY - capRadius,
+                                      juce::Colour(0xFF0A0A0C), centreX, centreY + capRadius, false);
         g.setGradientFill(capGrad);
         g.fillEllipse(centreX - capRadius, centreY - capRadius, capRadius * 2, capRadius * 2);
 
+        // 4. Top Glass Reflection/Glare
+        juce::Path glare;
+        glare.addEllipse(centreX - capRadius * 0.65f, centreY - capRadius * 0.85f, capRadius * 1.3f, capRadius * 0.8f);
+        juce::ColourGradient glareGrad(juce::Colours::white.withAlpha(0.18f), centreX, centreY - capRadius,
+                                       juce::Colours::white.withAlpha(0.0f), centreX, centreY, false);
+        g.setGradientFill(glareGrad);
+        g.fillPath(glare);
+
         // Highlight ring on cap edge
-        g.setColour(juce::Colours::white.withAlpha(0.12f));
+        g.setColour(juce::Colours::white.withAlpha(0.2f));
         g.drawEllipse(centreX - capRadius, centreY - capRadius, capRadius * 2, capRadius * 2, 1.0f);
 
-        // 4. Track Arc[cite: 11]
+        // 5. Track Arc (Floating above the panel)
         juce::Path trackArc;
-        trackArc.addCentredArc(centreX, centreY, radius + 2.5f, radius + 2.5f, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
-        g.setColour(findColour(juce::Slider::trackColourId).withAlpha(0.5f));
-        g.strokePath(trackArc, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        trackArc.addCentredArc(centreX, centreY, radius + 3.5f, radius + 3.5f, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
+        g.setColour(juce::Colour(0xFF1A1A20).withAlpha(0.7f));
+        g.strokePath(trackArc, juce::PathStrokeType(4.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        // 5. Active Fill Arc (Glowing Accent)[cite: 11]
+        // 6. Active Fill Arc (Glowing Accent)
         juce::Path fillArc;
-        fillArc.addCentredArc(centreX, centreY, radius + 2.5f, radius + 2.5f, 0.0f, rotaryStartAngle, angle, true);
-        g.setColour(findColour(juce::Slider::rotarySliderFillColourId).withAlpha(0.8f));
-        g.strokePath(fillArc, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        fillArc.addCentredArc(centreX, centreY, radius + 3.5f, radius + 3.5f, 0.0f, rotaryStartAngle, angle, true);
+        g.setColour(juce::Colours::white.withAlpha(0.95f));
+        g.strokePath(fillArc, juce::PathStrokeType(4.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        // 6. Indicator Line with Glow[cite: 11]
+        // 7. Sharp Indicator Line
         juce::Path p;
-        p.addRoundedRectangle(-1.5f, -capRadius + 4.0f, 3.0f, capRadius * 0.55f, 1.0f);
+        p.addRoundedRectangle(-2.0f, -capRadius + 4.0f, 4.0f, capRadius * 0.45f, 2.0f);
         p.applyTransform(juce::AffineTransform::rotation(angle).translated(centreX, centreY));
         
         g.setColour(juce::Colours::white);
@@ -76,7 +84,7 @@ public:
     {
         auto bounds = button.getLocalBounds().toFloat();
         
-        if (button.getName() == "SAVE" || button.getName() == "SETTINGS")
+        if (button.getName() == "SAVE" || button.getName() == "SETTINGS")[cite: 6]
         {
             g.setColour(shouldDrawButtonAsHighlighted ? juce::Colour(0xFF2A2A30) : juce::Colour(0xFF161618));
             g.fillRoundedRectangle(bounds, 4.0f);
@@ -107,7 +115,7 @@ public:
             return;
         }
 
-        if (button.getToggleState())
+        if (button.getToggleState())[cite: 6]
         {
             juce::ColourGradient btnGrad(juce::Colour(0xFF2A2A32).withAlpha(0.5f), 0, 0, juce::Colour(0xFF1A1A20).withAlpha(0.5f), 0, bounds.getHeight(), false);
             g.setGradientFill(btnGrad);
@@ -131,7 +139,7 @@ public:
 
     void drawButtonText (juce::Graphics& g, juce::TextButton& button, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
     {
-        if (button.getName() == "SAVE" || button.getName() == "SETTINGS") return; 
+        if (button.getName() == "SAVE" || button.getName() == "SETTINGS") return;[cite: 6]
         
         g.setFont(juce::FontOptions(11.0f).withName("Helvetica").withStyle(button.getToggleState() ? "Bold" : "Plain"));
         g.setColour(button.getToggleState() ? juce::Colours::white : juce::Colours::white.withAlpha(0.6f));
@@ -142,9 +150,9 @@ public:
                            float sliderPos, float minSliderPos, float maxSliderPos,
                            const juce::Slider::SliderStyle style, juce::Slider& slider) override
     {
-        // Track line[cite: 11]
+        // Track line
         g.setColour(juce::Colours::black.withAlpha(0.5f));
-        g.fillRect((float)x, (float)y + (float)height * 0.5f - 1.0f, (float)width, 2.0f);
+        g.fillRect((float)x, (float)y + (float)height * 0.5f - 1.0f, (float)width, 2.0f);[cite: 6]
 
         // Thumb Shadow & Glow
         g.setColour(juce::Colours::black.withAlpha(0.4f));
@@ -162,7 +170,7 @@ class HomeDistoAudioProcessorEditor  : public juce::AudioProcessorEditor,
                                        public juce::AudioProcessorValueTreeState::Listener
 {
 public:
-    HomeDistoAudioProcessorEditor (HomeDistoAudioProcessor&);
+    HomeDistoAudioProcessorEditor (HomeDistoAudioProcessor&);[cite: 6]
     ~HomeDistoAudioProcessorEditor() override;
 
     void paint (juce::Graphics&) override;
@@ -173,8 +181,8 @@ private:
     HomeDistoAudioProcessor& audioProcessor;
     FlatGodLookAndFeel flatLaf;
 
-    // Header UI[cite: 11]
-    juce::ComboBox presetCombo;
+    // Header UI
+    juce::ComboBox presetCombo;[cite: 6]
     juce::TextButton saveButton;
     juce::TextButton settingsButton;
 
@@ -186,7 +194,7 @@ private:
     juce::Slider mixKnob;
     juce::ToggleButton autoToggle;
     
-    // Mode List[cite: 11]
+    // Mode List
     juce::TextButton modeButtons[6];
     juce::StringArray modeNames = { "PUNCH", "TUBE", "TAPE", "DIGITAL", "CRUNCH", "FUZZ" };
     
@@ -194,15 +202,15 @@ private:
     juce::Slider lowCutSlider;
     juce::Slider highCutSlider;
 
-    using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+    using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;[cite: 6]
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
-    std::unique_ptr<SliderAttachment> driveAttach, outAttach, toneAttach, punchAttach, mixAttach;
+    std::unique_ptr<SliderAttachment> driveAttach, outAttach, toneAttach, punchAttach, mixAttach;[cite: 6]
     std::unique_ptr<SliderAttachment> lowAttach, highAttach;
     std::unique_ptr<ButtonAttachment> autoAttach;
 
     juce::String getFrequencyString(float hz);
-    void drawShadedCard(juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour baseColour);
+    void drawShadedCard(juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour baseColour);[cite: 6]
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HomeDistoAudioProcessorEditor)
 };
