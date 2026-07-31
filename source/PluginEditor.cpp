@@ -4,7 +4,6 @@
 HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    // Apply global base font to ensure toggles/combo boxes dynamically inherit the modern typography
     juce::LookAndFeel::getDefaultLookAndFeel().setDefaultSansSerifTypefaceName("Helvetica");
 
     setSize (720, 410);
@@ -102,7 +101,7 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawRoundedRectangle(10, 10, 700, 390, 8, 1.5f);
 
     g.setColour(juce::Colours::white);
-    g.setFont(juce::FontOptions(22.0f).withTypefaceName("Helvetica").withStyle("Bold"));
+    g.setFont(juce::FontOptions(22.0f).withName("Helvetica").withStyle("Bold"));
     g.drawText("Home:", 25, 20, 80, 30, juce::Justification::centredLeft);
     g.setColour(juce::Colour(0xFFA855F7));
     g.drawText("Disto", 85, 20, 80, 30, juce::Justification::centredLeft);
@@ -123,19 +122,19 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.fillRoundedRectangle(530, colY, 170, colHeight, 8); // Col 3: Thinner Output/Mix
 
     g.setColour(juce::Colour(0xFF888888));
-    g.setFont(juce::FontOptions(13.0f).withTypefaceName("Helvetica").withStyle("Bold"));
+    g.setFont(juce::FontOptions(13.0f).withName("Helvetica").withStyle("Bold"));
 
     // --- COLUMN 1: MODES & FILTER (60/40 Split) ---
     g.drawText("MODE", 20, 90, 230, 20, juce::Justification::centred);
     
-    // 60% Divider shifted up
+    // 60% Divider
     g.setColour(juce::Colour(0xFF202024));
     g.drawLine(35, 265, 235, 265, 1.5f); 
     
     g.setColour(juce::Colour(0xFF888888));
     g.drawText("FILTER", 20, 275, 230, 20, juce::Justification::centred);
 
-    g.setFont(juce::FontOptions(10.0f).withTypefaceName("Helvetica").withStyle("Bold"));
+    g.setFont(juce::FontOptions(10.0f).withName("Helvetica").withStyle("Bold"));
     g.setColour(juce::Colour(0xFFA855F7));
     g.drawText("LOW CUT", 35, 295, 80, 15, juce::Justification::left);
     g.drawText("HIGH CUT", 155, 295, 80, 15, juce::Justification::right);
@@ -148,7 +147,7 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     float lowX = lowCutSlider.getX() + (lowProp * lowCutSlider.getWidth());
     float highProp = highCutSlider.valueToProportionOfLength(highCutSlider.getValue());
     float highX = highCutSlider.getX() + (highProp * highCutSlider.getWidth());
-    float graphY = 340.0f; // Scale matched to new 40% height
+    float graphY = 340.0f;
 
     g.setColour(juce::Colour(0xFF2A2A30));
     g.drawLine(35, graphY, 235, graphY, 2.0f); 
@@ -163,13 +162,13 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 
     // --- COLUMN 2: DRIVE, TONE, PUNCH ---
     g.setColour(juce::Colour(0xFF888888));
-    g.setFont(juce::FontOptions(13.0f).withTypefaceName("Helvetica").withStyle("Bold"));
+    g.setFont(juce::FontOptions(13.0f).withName("Helvetica").withStyle("Bold"));
     g.drawText("DRIVE", 260, 90, 260, 20, juce::Justification::centred);
     g.drawText("TONE", 285, 260, 80, 20, juce::Justification::centred);
     g.drawText("PUNCH", 415, 260, 80, 20, juce::Justification::centred);
 
-    // Tone & Punch Descriptors (Dark/Bright, Soft/Hard)
-    g.setFont(juce::FontOptions(9.0f).withTypefaceName("Helvetica").withStyle("Bold"));
+    // Tone & Punch Descriptors
+    g.setFont(juce::FontOptions(9.0f).withName("Helvetica").withStyle("Bold"));
     g.setColour(juce::Colour(0xFF55555D));
     g.drawText("DARK",  275, 360, 40, 15, juce::Justification::left);
     g.drawText("BRIGHT", 335, 360, 40, 15, juce::Justification::right);
@@ -178,13 +177,12 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 
     // --- COLUMN 3: THINNER OUTPUT, MIX ---
     g.setColour(juce::Colour(0xFF888888));
-    g.setFont(juce::FontOptions(13.0f).withTypefaceName("Helvetica").withStyle("Bold"));
-    // Left-aligned to allow AUTO toggle next to it
+    g.setFont(juce::FontOptions(13.0f).withName("Helvetica").withStyle("Bold"));
     g.drawText("OUTPUT", 545, 90, 70, 20, juce::Justification::left);
     g.drawText("MIX", 580, 275, 70, 20, juce::Justification::centred);
 
     // Mix Descriptors
-    g.setFont(juce::FontOptions(9.0f).withTypefaceName("Helvetica").withStyle("Bold"));
+    g.setFont(juce::FontOptions(9.0f).withName("Helvetica").withStyle("Bold"));
     g.setColour(juce::Colour(0xFF55555D));
     g.drawText("DRY", 565, 360, 30, 15, juce::Justification::left);
     g.drawText("WET", 635, 360, 30, 15, juce::Justification::right);
@@ -205,7 +203,6 @@ void HomeDistoAudioProcessorEditor::resized()
         modeButtons[i].setBounds(35 + (col * 105), 120 + (row * 45), 95, 25);
     }
 
-    // Shifted up to fit into new 40% spacing height
     lowCutSlider.setBounds(30, 325, 90, 30);  
     highCutSlider.setBounds(150, 325, 90, 30); 
 
@@ -216,6 +213,6 @@ void HomeDistoAudioProcessorEditor::resized()
 
     // --- COLUMN 3: THIN OUTPUT/MIX ---
     outputKnob.setBounds(555, 125, 120, 120);
-    autoToggle.setBounds(620, 90, 65, 20); // Stacked perfectly alongside the OUTPUT label text
+    autoToggle.setBounds(620, 90, 65, 20); 
     mixKnob.setBounds(580, 290, 70, 70);
 }
