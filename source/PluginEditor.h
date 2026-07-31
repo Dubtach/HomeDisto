@@ -111,7 +111,7 @@ public:
     {
         if (button.getName() == "SAVE" || button.getName() == "SETTINGS") return; 
         
-        g.setFont(juce::FontOptions(11.0f).withStyle(button.getToggleState() ? "Bold" : "Plain"));
+        g.setFont(juce::FontOptions(11.0f).withTypefaceName("Helvetica").withStyle(button.getToggleState() ? "Bold" : "Plain"));
         g.setColour(button.getToggleState() ? juce::Colour(0xFFA855F7) : juce::Colour(0xFFAAAAAA));
         g.drawText(button.getButtonText(), button.getLocalBounds(), juce::Justification::centred);
     }
@@ -155,7 +155,7 @@ private:
     juce::Slider mixKnob;
     juce::ToggleButton autoToggle;
     
-    // Mode List (Expanded to 6)
+    // Mode List 
     juce::TextButton modeButtons[6];
     juce::StringArray modeNames = { "PUNCH", "TUBE", "TAPE", "DIGITAL", "CRUNCH", "FUZZ" };
     
