@@ -79,14 +79,14 @@ HomeDistoAudioProcessorEditor::~HomeDistoAudioProcessorEditor()
 
 void HomeDistoAudioProcessorEditor::createNoiseTexture()
 {
-    // Generate a subtle noise map[cite: 6]
+    // Generate a subtle noise map
     noiseTexture = juce::Image(juce::Image::ARGB, 256, 256, true);
     juce::Graphics g(noiseTexture);
     juce::Random r;
     for (int y = 0; y < 256; ++y) {
         for (int x = 0; x < 256; ++x) {
-            juce::uint8 alpha = (juce::uint8)(r.nextFloat() * 12.0f); // Very faint noise
-            noiseTexture.setPixelAt(x, y, juce::Colour(0, 0, 0, alpha));
+            auto alpha = (uint8_t)(r.nextFloat() * 12.0f); // Very faint noise
+            noiseTexture.setPixelAt(x, y, juce::Colour((uint8_t)0, (uint8_t)0, (uint8_t)0, alpha));
         }
     }
 }
