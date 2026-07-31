@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
+// Fully Flat 2D LookAndFeel
 class FlatGodLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
@@ -25,11 +26,11 @@ public:
         auto centreY = (float) y + (float) height * 0.5f;
         auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
 
-        // Solid Outer Flat Base
+        // Flat Base
         g.setColour(juce::Colour(0xFF121214));
         g.fillEllipse(centreX - radius, centreY - radius, radius * 2, radius * 2);
 
-        // Inner Cap
+        // Flat Cap
         auto capRadius = radius * 0.82f;
         g.setColour(juce::Colour(0xFF1A1A1E));
         g.fillEllipse(centreX - capRadius, centreY - capRadius, capRadius * 2, capRadius * 2);
@@ -110,9 +111,9 @@ public:
     {
         if (button.getName() == "SAVE" || button.getName() == "SETTINGS") return; 
         
-        g.setFont(juce::FontOptions(13.0f).withStyle(button.getToggleState() ? "Bold" : "Plain"));
+        g.setFont(juce::FontOptions(11.0f).withStyle(button.getToggleState() ? "Bold" : "Plain"));
         g.setColour(button.getToggleState() ? juce::Colour(0xFFA855F7) : juce::Colour(0xFFAAAAAA));
-        g.drawText(button.getButtonText(), button.getLocalBounds().withTrimmedLeft(10), juce::Justification::centredLeft);
+        g.drawText(button.getButtonText(), button.getLocalBounds(), juce::Justification::centred);
     }
 
     void drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
@@ -154,9 +155,9 @@ private:
     juce::Slider mixKnob;
     juce::ToggleButton autoToggle;
     
-    // Mode List
-    juce::TextButton modeButtons[4];
-    juce::StringArray modeNames = { "PUNCH", "TUBE", "TAPE", "DIGITAL" };
+    // Mode List (Expanded to 6)
+    juce::TextButton modeButtons[6];
+    juce::StringArray modeNames = { "PUNCH", "TUBE", "TAPE", "DIGITAL", "CRUNCH", "FUZZ" };
     
     // Filter Sliders
     juce::Slider lowCutSlider;

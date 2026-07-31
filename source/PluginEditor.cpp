@@ -4,10 +4,11 @@
 HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    setSize (780, 450); // Canvas expanded perfectly to fit 3 uniform column groups
+    // Reverted to a more compact window size while mapping out the new columns
+    setSize (720, 410);
     setLookAndFeel(&flatLaf);
 
-    presetCombo.addItemList({"Huge Punch", "Tape Saturation", "Digital Crush", "Warm Tube"}, 1);
+    presetCombo.addItemList({"Huge Punch", "Tape Saturation", "Digital Crush", "Warm Tube", "Heavy Fuzz"}, 1);
     presetCombo.setSelectedId(1, juce::dontSendNotification);
     presetCombo.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(presetCombo);
@@ -36,7 +37,8 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     addAndMakeVisible(autoToggle);
     autoAttach = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "AUTO", autoToggle);
 
-    for (int i = 0; i < 4; ++i)
+    // Expanded to loop through 6 modes 
+    for (int i = 0; i < 6; ++i)
     {
         modeButtons[i].setButtonText(modeNames[i]);
         modeButtons[i].setRadioGroupId(100);
@@ -44,7 +46,7 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
         addAndMakeVisible(modeButtons[i]);
         
         modeButtons[i].onClick = [this, i] {
-            audioProcessor.apvts.getParameter("MODE")->setValueNotifyingHost(i / 3.0f);
+            audioProcessor.apvts.getParameter("MODE")->setValueNotifyingHost(i / 5.0f);
         };
     }
     
@@ -90,109 +92,127 @@ juce::String HomeDistoAudioProcessorEditor::getFrequencyString(float hz)
 
 void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    // Base Canvas Background
     g.fillAll (juce::Colour(0xFF0C0C0E)); 
 
-    // Inner Window Bezel
     g.setColour(juce::Colour(0xFF121214));
-    g.fillRoundedRectangle(10, 10, 760, 430, 8);
+    g.fillRoundedRectangle(10, 10, 700, 390, 8);
     g.setColour(juce::Colour(0xFF1C1C20));
-    g.drawRoundedRectangle(10, 10, 760, 430, 8, 1.5f);
+    g.drawRoundedRectangle(10, 10, 700, 390, 8, 1.5f);
 
-    // --- Header Section ---
     g.setColour(juce::Colours::white);
     g.setFont(juce::FontOptions(22.0f).withStyle("Bold"));
     g.drawText("Home:", 25, 20, 80, 30, juce::Justification::centredLeft);
     g.setColour(juce::Colour(0xFFA855F7));
     g.drawText("Disto", 85, 20, 80, 30, juce::Justification::centredLeft);
 
-    // Line Separator
     g.setColour(juce::Colour(0xFF202024));
-    g.drawLine(25, 65, 755, 65, 2.0f);
+    g.drawLine(25, 65, 695, 65, 2.0f);
 
     // ==========================================
-    // 3 COLUMN SEMANTIC LAYOUT PANELS
+    // ASYMMETRIC COLUMN PANELS
     // ==========================================
-    int colWidth = 230;
-    int colHeight = 345;
     int colY = 80;
+    int colHeight = 310;
+    
+    // Panel Backgrounds
+    g.setColour(juce::Colour(0xFF18181A)); 
+    g.fillRoundedRectangle(20,  colY, 230, colHeight, 8); // Col 1: Modes (70%) & Filter (30%)
+    g.fillRoundedRectangle(260, colY, 260, colHeight, 8); // Col 2: Drive, Tone, Punch (Widest)
+    g.fillRoundedRectangle(530, colY, 170, colHeight, 8); // Col 3: Thinner Output/Mix
 
-    g.setColour(juce::Colour(0xFF18181A)); // Panel Background
-    g.fillRoundedRectangle(25,  colY, colWidth, colHeight, 8); // Col 1: Modes & Filter
-    g.fillRoundedRectangle(275, colY, colWidth, colHeight, 8); // Col 2: Drive, Tone, Punch
-    g.fillRoundedRectangle(525, colY, colWidth, colHeight, 8); // Col 3: Output, Auto, Mix
-
-    // Shared Header Font for Sections
     g.setColour(juce::Colour(0xFF888888));
     g.setFont(juce::FontOptions(13.0f).withStyle("Bold"));
 
-    // --- COLUMN 1: MODES & FILTER ---
-    g.drawText("MODE", 25, 95, colWidth, 20, juce::Justification::centred);
-    g.drawText("FILTER", 25, 255, colWidth, 20, juce::Justification::centred);
+    // --- COLUMN 1: MODES & FILTER (70/30 Split) ---
+    g.drawText("MODE", 20, 90, 230, 20, juce::Justification::centred);
+    
+    // 70% Divider
     g.setColour(juce::Colour(0xFF202024));
-    g.drawLine(40, 245, 235, 245, 1.5f); // Sub-divider
+    g.drawLine(35, 280, 235, 280, 1.5f); 
+    
+    g.setColour(juce::Colour(0xFF888888));
+    g.drawText("FILTER", 20, 290, 230, 20, juce::Justification::centred);
 
-    // Dynamic Filter Readouts
-    g.setFont(juce::FontOptions(11.0f).withStyle("Bold"));
+    g.setFont(juce::FontOptions(10.0f).withStyle("Bold"));
     g.setColour(juce::Colour(0xFFA855F7));
-    g.drawText("LOW CUT", 45, 280, 80, 20, juce::Justification::left);
-    g.drawText("HIGH CUT", 155, 280, 80, 20, juce::Justification::right);
+    g.drawText("LOW CUT", 35, 315, 80, 15, juce::Justification::left);
+    g.drawText("HIGH CUT", 155, 315, 80, 15, juce::Justification::right);
     g.setColour(juce::Colours::white);
-    g.drawText(getFrequencyString(lowCutSlider.getValue()), 45, 295, 80, 20, juce::Justification::left);
-    g.drawText(getFrequencyString(highCutSlider.getValue()), 155, 295, 80, 20, juce::Justification::right);
+    g.drawText(getFrequencyString(lowCutSlider.getValue()), 35, 330, 80, 15, juce::Justification::left);
+    g.drawText(getFrequencyString(highCutSlider.getValue()), 155, 330, 80, 15, juce::Justification::right);
 
-    // Exact Graphic Math based on sliders true proportion
+    // Mini filter graph aligned with sliders
     float lowProp = lowCutSlider.valueToProportionOfLength(lowCutSlider.getValue());
     float lowX = lowCutSlider.getX() + (lowProp * lowCutSlider.getWidth());
-
     float highProp = highCutSlider.valueToProportionOfLength(highCutSlider.getValue());
     float highX = highCutSlider.getX() + (highProp * highCutSlider.getWidth());
-    float graphY = 360.0f; // Align to horizontal center of sliders
+    float graphY = 360.0f; 
 
     g.setColour(juce::Colour(0xFF2A2A30));
-    g.drawLine(45, graphY, 235, graphY, 2.0f); // Track line
+    g.drawLine(35, graphY, 235, graphY, 2.0f); 
 
     juce::Path filterCurve;
-    filterCurve.startNewSubPath(45, 390);
-    filterCurve.cubicTo(lowX - 8, 390, lowX - 8, graphY, lowX, graphY);
+    filterCurve.startNewSubPath(35, 385);
+    filterCurve.cubicTo(lowX - 6, 385, lowX - 6, graphY, lowX, graphY);
     filterCurve.lineTo(highX, graphY);
-    filterCurve.cubicTo(highX + 8, graphY, highX + 8, 390, 235, 390);
+    filterCurve.cubicTo(highX + 6, graphY, highX + 6, 385, 235, 385);
     g.setColour(juce::Colour(0xFFA855F7));
     g.strokePath(filterCurve, juce::PathStrokeType(2.0f));
 
     // --- COLUMN 2: DRIVE, TONE, PUNCH ---
     g.setColour(juce::Colour(0xFF888888));
     g.setFont(juce::FontOptions(13.0f).withStyle("Bold"));
-    g.drawText("DRIVE", 275, 95, colWidth, 20, juce::Justification::centred);
-    g.drawText("TONE", 310, 335, 70, 20, juce::Justification::centred);
-    g.drawText("PUNCH", 400, 335, 70, 20, juce::Justification::centred);
+    g.drawText("DRIVE", 260, 90, 260, 20, juce::Justification::centred);
+    g.drawText("TONE", 285, 260, 80, 20, juce::Justification::centred);
+    g.drawText("PUNCH", 415, 260, 80, 20, juce::Justification::centred);
 
-    // --- COLUMN 3: OUTPUT, AUTO, MIX ---
-    g.drawText("OUTPUT", 525, 95, colWidth, 20, juce::Justification::centred);
-    g.drawText("MIX", 605, 335, 70, 20, juce::Justification::centred);
+    // Tone & Punch Descriptors (Dark/Bright, Soft/Hard)
+    g.setFont(juce::FontOptions(9.0f).withStyle("Bold"));
+    g.setColour(juce::Colour(0xFF55555D));
+    g.drawText("DARK",  275, 360, 40, 15, juce::Justification::left);
+    g.drawText("BRIGHT", 335, 360, 40, 15, juce::Justification::right);
+    g.drawText("SOFT",  405, 360, 40, 15, juce::Justification::left);
+    g.drawText("HARD",   465, 360, 40, 15, juce::Justification::right);
+
+    // --- COLUMN 3: THINNER OUTPUT, MIX ---
+    g.setColour(juce::Colour(0xFF888888));
+    g.setFont(juce::FontOptions(13.0f).withStyle("Bold"));
+    g.drawText("OUTPUT", 530, 90, 170, 20, juce::Justification::centred);
+    g.drawText("MIX", 580, 275, 70, 20, juce::Justification::centred);
+
+    // Mix Descriptors
+    g.setFont(juce::FontOptions(9.0f).withStyle("Bold"));
+    g.setColour(juce::Colour(0xFF55555D));
+    g.drawText("DRY", 565, 360, 30, 15, juce::Justification::left);
+    g.drawText("WET", 635, 360, 30, 15, juce::Justification::right);
 }
 
 void HomeDistoAudioProcessorEditor::resized()
 {
-    // --- TOP BAR --- 
-    presetCombo.setBounds(240, 20, 300, 30); // Longer preset bar in center
-    saveButton.setBounds(680, 20, 30, 30); // Pushed to right cluster
-    settingsButton.setBounds(720, 20, 30, 30); // Far corner
+    // Header
+    presetCombo.setBounds(210, 20, 300, 30);
+    saveButton.setBounds(620, 20, 30, 30); 
+    settingsButton.setBounds(660, 20, 30, 30); 
 
-    // --- COLUMN 1 ---
-    for (int i = 0; i < 4; ++i)
-        modeButtons[i].setBounds(50, 125 + (i * 28), 180, 24);
+    // --- COLUMN 1: MODES & FILTER ---
+    // 2 Columns, 3 Rows configuration for 6 Modes
+    for (int i = 0; i < 6; ++i)
+    {
+        int col = i % 2; // 0 for left, 1 for right
+        int row = i / 2; // 0, 1, or 2
+        modeButtons[i].setBounds(35 + (col * 105), 120 + (row * 45), 95, 25);
+    }
 
-    lowCutSlider.setBounds(45, 340, 95, 40);  
-    highCutSlider.setBounds(140, 340, 95, 40); 
+    lowCutSlider.setBounds(30, 345, 90, 30);  
+    highCutSlider.setBounds(150, 345, 90, 30); 
 
-    // --- COLUMN 2 ---
-    driveKnob.setBounds(290, 120, 200, 200); // Massive center focus
-    toneKnob.setBounds(310, 355, 70, 70);
-    punchKnob.setBounds(400, 355, 70, 70);
+    // --- COLUMN 2: DRIVE & TONE SHAPING ---
+    driveKnob.setBounds(315, 115, 150, 150); 
+    toneKnob.setBounds(290, 285, 70, 70);
+    punchKnob.setBounds(420, 285, 70, 70);
 
-    // --- COLUMN 3 ---
-    outputKnob.setBounds(565, 130, 150, 150);
-    autoToggle.setBounds(605, 300, 70, 25);
-    mixKnob.setBounds(605, 355, 70, 70);
+    // --- COLUMN 3: THIN OUTPUT/MIX ---
+    outputKnob.setBounds(555, 125, 120, 120);
+    autoToggle.setBounds(580, 250, 70, 20); // Stacked tightly above Mix
+    mixKnob.setBounds(580, 290, 70, 70);
 }
