@@ -453,11 +453,11 @@ void HomeDistoAudioProcessorEditor::resized()
     outputKnob.setBounds(555, 125, 120, 120); 
     // FIX: was overlapping the knob's corner directly -- moved clear to the
     // right of the knob with a real gap, vertically centered on it.
-    outputLockButton.setBounds(555 + 120 + 4, 125 + 120 / 2 - 9, 18, 18);
+    outputLockButton.setBounds(555 + 120 - 18, 125, 18, 18);
     
     autoToggle.setBounds(615, 90, 75, 20); 
     
     mixKnob.setBounds(580, 290, 70, 70);
     // FIX: same spacing fix as outputLockButton above.
-    mixLockButton.setBounds(580 + 70 + 8, 290 + 70 / 2 - 9, 18, 18);
+    mixLockButton.setBounds(580 + 70 + 8, 290, 18, 18);
 }
