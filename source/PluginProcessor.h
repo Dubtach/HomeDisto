@@ -48,6 +48,13 @@ private:
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> lowCutFilter;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> highCutFilter;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> toneFilter;
+
+    // NEW: post-distortion "de-fizz" filter. LOW_CUT/HIGH_CUT only shape what
+    // goes INTO the waveshaper -- they do nothing about the harsh upper
+    // harmonics the waveshaper itself generates. This runs after the
+    // distortion stage (wet path only) and is controlled by the SMOOTH
+    // parameter, exposed in the settings popup.
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> smoothFilter;
     
     // DSP Components (Dry Path - matched to prevent comb filtering)
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> dryLowCut;

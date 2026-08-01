@@ -21,10 +21,16 @@ HomeDistoAudioProcessor::HomeDistoAudioProcessor()
     lowCutFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighPass(44100.0, 20.0f);
     highCutFilter.state = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 20000.0f);
     toneFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighShelf(44100.0, 1000.0f, 0.707f, 1.0f);
+    smoothFilter.state = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 20000.0f);
     
     dryLowCut.state = lowCutFilter.state;
     dryHighCut.state = highCutFilter.state;
     dryTone.state = toneFilter.state;
+    // NOTE: smoothFilter intentionally has no dry counterpart. Unlike
+    // LOW_CUT/HIGH_CUT/TONE (which shape a knob the user controls and so are
+    // matched onto the dry path to avoid comb filtering when blended), SMOOTH
+    // only exists to tame harmonics the distortion itself creates -- the dry
+    // signal never had those harmonics, so there's nothing there to tame.
 }
 
 HomeDistoAudioProcessor::~HomeDistoAudioProcessor() {}
@@ -57,6 +63,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout HomeDistoAudioProcessor::cre
     // high-drive tones. Wired to the gear/settings button in the editor.
     params.push_back(std::make_unique<juce::AudioParameterBool>("HQ", "HQ Mode", false));
 
+    // NEW: post-distortion low-pass that tames harsh upper-harmonic fizz the
+    // waveshaper generates. 0 = off/full character, 1 = heaviest smoothing.
+    // Defaults to a little bit on -- most of the "harsh out of the box"
+    // complaints are exactly this, an unfiltered distortion tail.
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("SMOOTH", "Smooth (De-Fizz)", 0.0f, 1.0f, 0.35f));
+
     return { params.begin(), params.end() };
 }
 
@@ -70,6 +82,7 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     lowCutFilter.prepare(spec);
     highCutFilter.prepare(spec);
     toneFilter.prepare(spec);
+    smoothFilter.prepare(spec);
     
     dryLowCut.prepare(spec);
     dryHighCut.prepare(spec);
@@ -243,6 +256,10 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     float toneDb = tone * 6.0f; 
     updateHighShelf(toneFilter.state.get(), toneFreq, 0.707f, juce::Decibels::decibelsToGain(toneDb), sr);
 
+    float smoothAmt = apvts.getRawParameterValue("SMOOTH")->load();
+    float smoothFreq = juce::jmap(smoothAmt, 0.0f, 1.0f, 20000.0f, 3000.0f);
+    updateLowPass(smoothFilter.state.get(), smoothFreq, sr);
+
     // FIX: grow the oversampling + envelope scratch buffers if this block is
     // bigger than anything we've prepared for (see ensureCapacityFor for why).
     ensureCapacityFor(numSamples);
@@ -364,7 +381,11 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
             // mode ignored the knob entirely. This adds a generic
             // punch-scaled, asymmetric harmonic boost on top of every mode's
             // curve so the knob is always audible, everywhere.
-            out += currentPunch * 0.25f * out * std::abs(out);
+            // FIX: was 0.25f -- that added a lot of hard-edged harmonic
+            // energy on every mode by default and was a real contributor to
+            // the "harsh" complaint. 0.12f keeps PUNCH audible without
+            // stacking that much extra grit on top of the mode's own curve.
+            out += currentPunch * 0.12f * out * std::abs(out);
             // FIX: this used to clamp to +/-4.0 (about +12 dBFS), which is
             // "safe" only in the sense of not being NaN/Inf -- it still let
             // a genuinely ear-splitting signal through to the mix stage.
@@ -378,6 +399,10 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     }
 
     activeOversampling.processSamplesDown(block);
+
+    // NEW: de-fizz -- tames the harsh upper-harmonic content the waveshaper
+    // just generated, before the user-controlled TONE shelf gets applied.
+    smoothFilter.process(context);
 
     toneFilter.process(context);
     dryTone.process(dryContext);

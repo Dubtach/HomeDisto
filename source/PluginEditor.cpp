@@ -1,6 +1,84 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+// NEW: settings popup content. Owned by the CallOutBox that shows it (see
+// showSettingsMenu below), so its parameter attachments just need to live as
+// long as this component does.
+class SettingsPanel : public juce::Component
+{
+public:
+    explicit SettingsPanel(HomeDistoAudioProcessor& proc)
+    {
+        using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
+        using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+
+        hqToggle.setButtonText("HQ Mode (4x Oversampling)");
+        hqToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFF00E5FF));
+        addAndMakeVisible(hqToggle);
+        hqAttach = std::make_unique<ButtonAttachment>(proc.apvts, "HQ", hqToggle);
+
+        smoothLabel.setText("Smooth (De-Fizz)", juce::dontSendNotification);
+        smoothLabel.setFont(juce::FontOptions(12.0f).withStyle("Bold"));
+        smoothLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.8f));
+        addAndMakeVisible(smoothLabel);
+
+        smoothSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+        smoothSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 46, 20);
+        addAndMakeVisible(smoothSlider);
+        smoothAttach = std::make_unique<SliderAttachment>(proc.apvts, "SMOOTH", smoothSlider);
+
+        autoLabel.setText("Auto-Gain Compensation", juce::dontSendNotification);
+        autoLabel.setFont(juce::FontOptions(11.0f));
+        autoLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.6f));
+        addAndMakeVisible(autoLabel);
+        autoToggleRef.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFFFF007F));
+        addAndMakeVisible(autoToggleRef);
+        autoAttach = std::make_unique<ButtonAttachment>(proc.apvts, "AUTO", autoToggleRef);
+
+        openPresetsButton.setButtonText("Open Presets Folder");
+        openPresetsButton.onClick = [&proc] { proc.getPresetDirectory().revealToUser(); };
+        addAndMakeVisible(openPresetsButton);
+
+        setSize(260, 168);
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        g.fillAll(juce::Colour(0xFF161618));
+        g.setColour(juce::Colour(0xFF2A2A30));
+        g.drawRect(getLocalBounds(), 1);
+    }
+
+    void resized() override
+    {
+        auto b = getLocalBounds().reduced(12);
+        hqToggle.setBounds(b.removeFromTop(22));
+        b.removeFromTop(10);
+        smoothLabel.setBounds(b.removeFromTop(16));
+        smoothSlider.setBounds(b.removeFromTop(24));
+        b.removeFromTop(10);
+
+        auto autoRow = b.removeFromTop(22);
+        autoToggleRef.setBounds(autoRow.removeFromLeft(24));
+        autoLabel.setBounds(autoRow);
+        b.removeFromTop(10);
+
+        openPresetsButton.setBounds(b.removeFromTop(24));
+    }
+
+private:
+    juce::ToggleButton hqToggle;
+    juce::Label smoothLabel;
+    juce::Slider smoothSlider;
+    juce::Label autoLabel;
+    juce::ToggleButton autoToggleRef;
+    juce::TextButton openPresetsButton;
+
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> hqAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> smoothAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttach;
+};
+
 HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
@@ -55,13 +133,17 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     bypassButton.onClick = [this] { repaint(); };
     
     // FIX: previously this button was drawn and clickable but had no
-    // onClick handler at all -- clicking it did nothing. It's now wired to
-    // the HQ (4x oversampling) parameter, same pattern as bypass.
+    // onClick handler at all -- clicking it did nothing. It now opens a
+    // proper settings popup (HQ mode, de-fizz smoothing, auto-gain, and a
+    // shortcut to the presets folder) instead of being a single hardwired
+    // toggle.
     settingsButton.setName("SETTINGS");
-    settingsButton.setClickingTogglesState(true);
     addAndMakeVisible(settingsButton);
-    hqAttach = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "HQ", settingsButton);
-    settingsButton.setTooltip("HQ Mode: 4x oversampling for cleaner high-drive tones (adds a little latency/CPU)");
+    settingsButton.onClick = [this] {
+        auto panel = std::make_unique<SettingsPanel>(audioProcessor);
+        auto bounds = settingsButton.getScreenBounds();
+        juce::CallOutBox::launchAsynchronously(std::move(panel), bounds, nullptr);
+    };
 
     auto setupKnob = [this](juce::Slider& slider, const juce::String& paramID, std::unique_ptr<SliderAttachment>& attach, juce::Colour glowColour) {
         slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);

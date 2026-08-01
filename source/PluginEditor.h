@@ -106,13 +106,7 @@ public:
         
         if (button.getName() == "SAVE" || button.getName() == "SETTINGS" || button.getName() == "BYPASS")
         {
-            // FIX: SETTINGS is now a toggle (HQ oversampling mode) but its
-            // background never reflected that -- it looked identical whether
-            // HQ was on or off. Give it an accent fill when active.
-            if (button.getName() == "SETTINGS" && button.getToggleState())
-                g.setColour(juce::Colour(0xFF00E5FF).withAlpha(shouldDrawButtonAsHighlighted ? 0.35f : 0.25f));
-            else
-                g.setColour(shouldDrawButtonAsHighlighted ? juce::Colour(0xFF2A2A30) : juce::Colour(0xFF161618));
+            g.setColour(shouldDrawButtonAsHighlighted ? juce::Colour(0xFF2A2A30) : juce::Colour(0xFF161618));
             g.fillRoundedRectangle(bounds, 4.0f);
             
             g.setColour(juce::Colours::white);
@@ -289,7 +283,6 @@ private:
     std::unique_ptr<SliderAttachment> lowAttach, highAttach;
     std::unique_ptr<ButtonAttachment> autoAttach;
     std::unique_ptr<ButtonAttachment> bypassAttach;
-    std::unique_ptr<ButtonAttachment> hqAttach; // FIX: settingsButton previously had no onClick at all
 
     juce::String getFrequencyString(float hz);
     void drawShadedCard(juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour baseColour);
