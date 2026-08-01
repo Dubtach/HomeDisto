@@ -26,6 +26,7 @@ public:
         smoothSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 46, 20);
         addAndMakeVisible(smoothSlider);
         smoothAttach = std::make_unique<SliderAttachment>(proc.apvts, "SMOOTH", smoothSlider);
+        smoothSlider.textFromValueFunction = [](double v) { return juce::String(juce::roundToInt(v * 100.0)) + "%"; };
 
         // NOTE: Filter Slope now lives directly in the Filter card on the
         // main interface (12/24/48 buttons next to LOW CUT/HIGH CUT) rather
@@ -140,20 +141,53 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
         juce::CallOutBox::launchAsynchronously(std::move(panel), bounds, nullptr);
     };
 
-    auto setupKnob = [this](juce::Slider& slider, const juce::String& paramID, std::unique_ptr<SliderAttachment>& attach, juce::Colour glowColour) {
+    // NEW: every knob now shows its actual value in a small popup while
+    // hovering or dragging (setPopupDisplayEnabled with showOnlyWhileDragging
+    // = false means it appears on hover too, not just while adjusting).
+    // Each knob gets its own formatting function so the number shown
+    // actually means something -- percentage for DRIVE/MIX/PUNCH, signed dB
+    // around 0 for OUT/TONE -- rather than a raw internal parameter value.
+    auto setupKnob = [this](juce::Slider& slider, const juce::String& paramID, std::unique_ptr<SliderAttachment>& attach,
+                             juce::Colour glowColour, std::function<juce::String(double)> formatter) {
         slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
         slider.setColour(juce::Slider::rotarySliderFillColourId, glowColour); 
         addAndMakeVisible(slider);
         attach = std::make_unique<SliderAttachment>(audioProcessor.apvts, paramID, slider);
+        slider.textFromValueFunction = std::move(formatter);
+        slider.setPopupDisplayEnabled(true, false, this);
     };
 
-    setupKnob(driveKnob, "DRIVE", driveAttach, juce::Colour(0xFFB900FF)); 
-    setupKnob(toneKnob, "TONE", toneAttach, juce::Colour(0xFFB900FF));
-    setupKnob(punchKnob, "PUNCH", punchAttach, juce::Colour(0xFFB900FF));
+    // DRIVE: shown as % of its 0-24 dB range rather than raw dB, per request.
+    setupKnob(driveKnob, "DRIVE", driveAttach, juce::Colour(0xFFB900FF),
+        [](double v) { return juce::String(juce::roundToInt(v / 24.0 * 100.0)) + "%"; });
 
-    setupKnob(outputKnob, "OUT", outAttach, juce::Colour(0xFFFF007F)); 
-    setupKnob(mixKnob, "MIX", mixAttach, juce::Colour(0xFFFF007F));
+    // TONE: internally -1..1, actually drives a +/-6 dB shelf -- show the
+    // real dB value it produces, signed, 0 dB dead center.
+    setupKnob(toneKnob, "TONE", toneAttach, juce::Colour(0xFFB900FF),
+        [](double v) {
+            double db = v * 6.0;
+            juce::String s = juce::String(db, 1);
+            if (db > 0.0) s = "+" + s;
+            return s + " dB";
+        });
+
+    // PUNCH: plain 0-1 amount -- percentage.
+    setupKnob(punchKnob, "PUNCH", punchAttach, juce::Colour(0xFFB900FF),
+        [](double v) { return juce::String(juce::roundToInt(v * 100.0)) + "%"; });
+
+    // OUTPUT: real dB value, signed, 0 dB dead center (range is already
+    // -24..+24 dB with 0 as the default/middle).
+    setupKnob(outputKnob, "OUT", outAttach, juce::Colour(0xFFFF007F),
+        [](double v) {
+            juce::String s = juce::String(v, 1);
+            if (v > 0.0) s = "+" + s;
+            return s + " dB";
+        });
+
+    // MIX: 0-1 dry/wet ratio -- percentage, per request.
+    setupKnob(mixKnob, "MIX", mixAttach, juce::Colour(0xFFFF007F),
+        [](double v) { return juce::String(juce::roundToInt(v * 100.0)) + "%"; });
 
     // NEW: lock icons -- when locked, changing presets leaves this knob's
     // value alone instead of jumping to whatever the preset stored.
@@ -195,12 +229,16 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     addAndMakeVisible(lowCutSlider);
     lowAttach = std::make_unique<SliderAttachment>(audioProcessor.apvts, "LOW_CUT", lowCutSlider);
     lowCutSlider.onValueChange = [this] { repaint(); };
+    lowCutSlider.textFromValueFunction = [this](double v) { return getFrequencyString((float) v); };
+    lowCutSlider.setPopupDisplayEnabled(true, false, this);
 
     highCutSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     highCutSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     addAndMakeVisible(highCutSlider);
     highAttach = std::make_unique<SliderAttachment>(audioProcessor.apvts, "HIGH_CUT", highCutSlider);
     highCutSlider.onValueChange = [this] { repaint(); };
+    highCutSlider.textFromValueFunction = [this](double v) { return getFrequencyString((float) v); };
+    highCutSlider.setPopupDisplayEnabled(true, false, this);
 
     // NEW: filter slope buttons (12/24/48 dB/oct), right in the Filter card.
     for (int i = 0; i < 3; ++i)
@@ -347,11 +385,13 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     drawCardText("FILTER", 32, 273, 80, 20, juce::Justification::left);
 
     g.setFont(juce::FontOptions(11.0f).withName("Helvetica").withStyle("Bold"));
-    drawCardText("LOW CUT", 35, 295, 80, 15, juce::Justification::left);
-    drawCardText("HIGH CUT", 155, 295, 80, 15, juce::Justification::right);
-    
-    drawCardText(getFrequencyString(lowCutSlider.getValue()), 35, 310, 80, 15, juce::Justification::left); 
-    drawCardText(getFrequencyString(highCutSlider.getValue()), 155, 310, 80, 15, juce::Justification::right); 
+    // FIX: removed the static "LOW CUT"/"HIGH CUT" labels -- the sliders'
+    // position and the curve graphic already make it obvious which is
+    // which, and hovering/dragging now shows the exact value anyway (see
+    // constructor: setPopupDisplayEnabled). Moved the live value readout up
+    // into the space that freed up.
+    drawCardText(getFrequencyString(lowCutSlider.getValue()), 35, 300, 80, 15, juce::Justification::left); 
+    drawCardText(getFrequencyString(highCutSlider.getValue()), 155, 300, 80, 15, juce::Justification::right); 
 
     float lowProp = lowCutSlider.valueToProportionOfLength(lowCutSlider.getValue());
     float lowX = lowCutSlider.getX() + (lowProp * lowCutSlider.getWidth());
@@ -459,5 +499,5 @@ void HomeDistoAudioProcessorEditor::resized()
     
     mixKnob.setBounds(580, 290, 70, 70);
     // FIX: same spacing fix as outputLockButton above.
-    mixLockButton.setBounds(580 + 70 + 8, 290, 18, 18);
+    mixLockButton.setBounds(580 + 60 + 8, 290, 18, 18);
 }
