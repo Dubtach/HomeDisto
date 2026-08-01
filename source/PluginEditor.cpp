@@ -11,7 +11,6 @@ public:
     {
         using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
         using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
-        using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
 
         hqToggle.setButtonText("HQ Mode (4x Oversampling)");
         hqToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFF00E5FF));
@@ -28,19 +27,11 @@ public:
         addAndMakeVisible(smoothSlider);
         smoothAttach = std::make_unique<SliderAttachment>(proc.apvts, "SMOOTH", smoothSlider);
 
-        // NEW: filter slope -- how steeply LOW_CUT/HIGH_CUT roll off
-        // outside the focus band. Lives here rather than the main interface
-        // since it's a "shape the tool" setting, not something you'd sweep
-        // while playing.
-        slopeLabel.setText("Filter Slope", juce::dontSendNotification);
-        slopeLabel.setFont(juce::FontOptions(12.0f).withStyle("Bold"));
-        slopeLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.8f));
-        addAndMakeVisible(slopeLabel);
-
-        if (auto* slopeParam = dynamic_cast<juce::AudioParameterChoice*>(proc.apvts.getParameter("SLOPE")))
-            slopeBox.addItemList(slopeParam->choices, 1);
-        addAndMakeVisible(slopeBox);
-        slopeAttach = std::make_unique<ComboBoxAttachment>(proc.apvts, "SLOPE", slopeBox);
+        // NOTE: Filter Slope now lives directly in the Filter card on the
+        // main interface (12/24/48 buttons next to LOW CUT/HIGH CUT) rather
+        // than here -- it's a control people want quick access to while
+        // shaping the band, not a set-and-forget setting. No duplicate
+        // control here on purpose (see also: why AUTO isn't here either).
 
         // NOTE: no Auto-Gain control here on purpose -- it already has its
         // own toggle on the main interface (next to the knobs), so putting
@@ -51,7 +42,7 @@ public:
         openPresetsButton.onClick = [&proc] { proc.getPresetDirectory().revealToUser(); };
         addAndMakeVisible(openPresetsButton);
 
-        setSize(260, 190);
+        setSize(260, 122);
     }
 
     void paint(juce::Graphics& g) override
@@ -69,9 +60,6 @@ public:
         smoothLabel.setBounds(b.removeFromTop(16));
         smoothSlider.setBounds(b.removeFromTop(24));
         b.removeFromTop(10);
-        slopeLabel.setBounds(b.removeFromTop(16));
-        slopeBox.setBounds(b.removeFromTop(24));
-        b.removeFromTop(10);
 
         openPresetsButton.setBounds(b.removeFromTop(24));
     }
@@ -80,13 +68,10 @@ private:
     juce::ToggleButton hqToggle;
     juce::Label smoothLabel;
     juce::Slider smoothSlider;
-    juce::Label slopeLabel;
-    juce::ComboBox slopeBox;
     juce::TextButton openPresetsButton;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> hqAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> smoothAttach;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> slopeAttach;
 };
 
 HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProcessor& p)
@@ -216,11 +201,30 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     addAndMakeVisible(highCutSlider);
     highAttach = std::make_unique<SliderAttachment>(audioProcessor.apvts, "HIGH_CUT", highCutSlider);
     highCutSlider.onValueChange = [this] { repaint(); };
+
+    // NEW: filter slope buttons (12/24/48 dB/oct), right in the Filter card.
+    for (int i = 0; i < 3; ++i)
+    {
+        slopeButtons[i].setButtonText(slopeButtonLabels[i]);
+        slopeButtons[i].setRadioGroupId(101);
+        slopeButtons[i].setClickingTogglesState(true);
+        addAndMakeVisible(slopeButtons[i]);
+
+        slopeButtons[i].onClick = [this, i] {
+            audioProcessor.apvts.getParameter("SLOPE")->setValueNotifyingHost(i / 2.0f);
+            repaint(); // the visual curve steepness depends on slope too
+        };
+    }
+
+    audioProcessor.apvts.addParameterListener("SLOPE", this);
+    int initialSlope = (int) audioProcessor.apvts.getRawParameterValue("SLOPE")->load();
+    slopeButtons[juce::jlimit(0, 2, initialSlope)].setToggleState(true, juce::dontSendNotification);
 }
 
 HomeDistoAudioProcessorEditor::~HomeDistoAudioProcessorEditor()
 {
     audioProcessor.apvts.removeParameterListener("MODE", this);
+    audioProcessor.apvts.removeParameterListener("SLOPE", this);
     setLookAndFeel(nullptr); 
 }
 
@@ -260,6 +264,14 @@ void HomeDistoAudioProcessorEditor::parameterChanged (const juce::String& parame
     {
         juce::MessageManager::callAsync([this, newValue]() {
             modeButtons[(int)newValue].setToggleState(true, juce::dontSendNotification);
+        });
+    }
+    else if (parameterID == "SLOPE")
+    {
+        juce::MessageManager::callAsync([this, newValue]() {
+            int idx = juce::jlimit(0, 2, (int) newValue);
+            slopeButtons[idx].setToggleState(true, juce::dontSendNotification);
+            repaint(); // visual curve steepness depends on slope
         });
     }
 }
@@ -330,7 +342,9 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont(juce::FontOptions(14.0f).withName("Helvetica").withStyle("Bold"));
 
     drawCardText("MODE", 20, 90, 230, 20, juce::Justification::centred);
-    drawCardText("FILTER", 20, 273, 230, 20, juce::Justification::centred);
+    // FIX: left-aligned and narrowed (was centred across the full card
+    // width) to make room for the 12/24/48 slope buttons in the same row.
+    drawCardText("FILTER", 32, 273, 80, 20, juce::Justification::left);
 
     g.setFont(juce::FontOptions(11.0f).withName("Helvetica").withStyle("Bold"));
     drawCardText("LOW CUT", 35, 295, 80, 15, juce::Justification::left);
@@ -348,11 +362,19 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour(juce::Colours::black.withAlpha(0.2f));
     g.drawLine(35, graphY, 235, graphY, 2.0f); 
 
+    // NEW: corner sharpness now actually reflects the selected filter
+    // slope instead of being a fixed, meaningless curve. Gentler roll-off
+    // (12 dB/oct) draws a wide, soft corner; steeper slopes (24/48 dB/oct)
+    // draw a progressively tighter, more abrupt corner -- visually a
+    // steeper wall, matching what the filter is actually doing.
+    int slopeIdx = juce::jlimit(0, 2, (int) audioProcessor.apvts.getRawParameterValue("SLOPE")->load());
+    float cornerOffset = slopeIdx == 0 ? 10.0f : (slopeIdx == 1 ? 5.0f : 1.5f);
+
     juce::Path filterCurve; 
     filterCurve.startNewSubPath(35, 375);
-    filterCurve.cubicTo(lowX - 6, 375, lowX - 6, graphY, lowX, graphY);
+    filterCurve.cubicTo(lowX - cornerOffset, 375, lowX - cornerOffset, graphY, lowX, graphY);
     filterCurve.lineTo(highX, graphY);
-    filterCurve.cubicTo(highX + 6, graphY, highX + 6, 375, 235, 375);
+    filterCurve.cubicTo(highX + cornerOffset, graphY, highX + cornerOffset, 375, 235, 375);
     
     g.setColour(juce::Colours::black.withAlpha(0.4f));
     g.strokePath(filterCurve, juce::PathStrokeType(3.5f), juce::AffineTransform::translation(0, 1.5f));
@@ -420,15 +442,22 @@ void HomeDistoAudioProcessorEditor::resized()
     lowCutSlider.setBounds(30, 325, 90, 30);  
     highCutSlider.setBounds(150, 325, 90, 30); 
 
+    // NEW: slope buttons sit in the FILTER title row, right side of the card.
+    for (int i = 0; i < 3; ++i)
+        slopeButtons[i].setBounds(122 + i * 38, 274, 34, 18);
+
     driveKnob.setBounds(315, 115, 150, 150); 
     toneKnob.setBounds(290, 285, 70, 70);
     punchKnob.setBounds(420, 285, 70, 70);
 
     outputKnob.setBounds(555, 125, 120, 120); 
-    outputLockButton.setBounds(555 + 120 - 18, 125, 18, 18);
+    // FIX: was overlapping the knob's corner directly -- moved clear to the
+    // right of the knob with a real gap, vertically centered on it.
+    outputLockButton.setBounds(555 + 120 + 4, 125 + 120 / 2 - 9, 18, 18);
     
     autoToggle.setBounds(615, 90, 75, 20); 
     
     mixKnob.setBounds(580, 290, 70, 70);
-    mixLockButton.setBounds(580 + 120 - 18, 290, 18, 18);
+    // FIX: same spacing fix as outputLockButton above.
+    mixLockButton.setBounds(580 + 70 + 8, 290 + 70 / 2 - 9, 18, 18);
 }

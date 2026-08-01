@@ -311,6 +311,12 @@ private:
     juce::Slider lowCutSlider;
     juce::Slider highCutSlider;
 
+    // NEW: filter slope, right in the Filter card next to LOW CUT/HIGH CUT
+    // -- this is a control people want quick access to while dialing in the
+    // focus band, not a buried setting.
+    juce::TextButton slopeButtons[3];
+    juce::StringArray slopeButtonLabels = { "12", "24", "48" };
+
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
