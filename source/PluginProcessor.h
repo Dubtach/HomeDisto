@@ -70,6 +70,15 @@ private:
     std::unique_ptr<juce::dsp::Oversampling<float>> oversampling4x;
     bool lastHqState = false;
 
+    // FIX: Oversampling's internal buffers are only sized for the block size
+    // given to initProcessing(). Reaper's "Anticipative FX processing" (which
+    // kicks in automatically once a plugin reports latency, as ours does now)
+    // can call processBlock() with larger blocks than prepareToPlay ever saw.
+    // Track the largest block size we've actually prepared for so we can grow
+    // everything on demand instead of silently overrunning fixed buffers.
+    int preparedBlockSize = 0;
+    void ensureCapacityFor(int numSamples);
+
     // Per-block scratch buffers for smoothed drive/punch values at the
     // (non-oversampled) block rate, indexed and held across oversampled
     // sub-samples. Sized in prepareToPlay to avoid realtime allocation.

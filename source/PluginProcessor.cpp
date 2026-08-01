@@ -93,17 +93,38 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     oversampling4x = std::make_unique<juce::dsp::Oversampling<float>>(
         numChannels, 2, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true);
 
-    oversampling2x->initProcessing((size_t) samplesPerBlock);
-    oversampling4x->initProcessing((size_t) samplesPerBlock);
-    oversampling2x->reset();
-    oversampling4x->reset();
+    // FIX: preparedBlockSize must be reset to 0 here so ensureCapacityFor()
+    // below actually (re)initializes the fresh oversampling objects instead
+    // of thinking they're already sized correctly from a previous prepare.
+    preparedBlockSize = 0;
+    ensureCapacityFor(samplesPerBlock);
 
     lastHqState = apvts.getRawParameterValue("HQ")->load() > 0.5f;
     setLatencySamples((int) (lastHqState ? oversampling4x->getLatencyInSamples()
                                           : oversampling2x->getLatencyInSamples()));
+}
 
-    driveEnvBuffer.resize(samplesPerBlock);
-    punchEnvBuffer.resize(samplesPerBlock);
+void HomeDistoAudioProcessor::ensureCapacityFor(int numSamples)
+{
+    // FIX: this is the actual crackle/"electric spark" bug. Oversampling's
+    // internal buffers, and our own drive/punch envelope scratch buffers,
+    // were only ever sized once, in prepareToPlay(), for the block size the
+    // host announced up front. Once oversampling made this plugin report
+    // latency, Reaper's Anticipative FX processing started calling
+    // processBlock() with larger blocks than that -- so those fixed-size
+    // buffers got overrun, and the waveshaper ended up reading/writing
+    // garbage memory. That garbage is what you were hearing as sparking/
+    // crackling noise. This grows everything on demand instead.
+    if (numSamples <= preparedBlockSize)
+        return;
+
+    preparedBlockSize = numSamples;
+
+    if (oversampling2x != nullptr) { oversampling2x->initProcessing((size_t) preparedBlockSize); oversampling2x->reset(); }
+    if (oversampling4x != nullptr) { oversampling4x->initProcessing((size_t) preparedBlockSize); oversampling4x->reset(); }
+
+    driveEnvBuffer.resize(preparedBlockSize);
+    punchEnvBuffer.resize(preparedBlockSize);
 }
 
 void HomeDistoAudioProcessor::releaseResources() {}
@@ -215,6 +236,10 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     float toneFreq = 1000.0f; 
     float toneDb = tone * 6.0f; 
     updateHighShelf(toneFilter.state.get(), toneFreq, 0.707f, juce::Decibels::decibelsToGain(toneDb), sr);
+
+    // FIX: grow the oversampling + envelope scratch buffers if this block is
+    // bigger than anything we've prepared for (see ensureCapacityFor for why).
+    ensureCapacityFor(numSamples);
 
     if (dryBuffer.getNumChannels() < totalNumOutputChannels || dryBuffer.getNumSamples() < numSamples)
     {
