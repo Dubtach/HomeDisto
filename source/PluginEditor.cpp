@@ -54,8 +54,14 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     bypassAttach = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "BYPASS", bypassButton);
     bypassButton.onClick = [this] { repaint(); };
     
+    // FIX: previously this button was drawn and clickable but had no
+    // onClick handler at all -- clicking it did nothing. It's now wired to
+    // the HQ (4x oversampling) parameter, same pattern as bypass.
     settingsButton.setName("SETTINGS");
+    settingsButton.setClickingTogglesState(true);
     addAndMakeVisible(settingsButton);
+    hqAttach = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "HQ", settingsButton);
+    settingsButton.setTooltip("HQ Mode: 4x oversampling for cleaner high-drive tones (adds a little latency/CPU)");
 
     auto setupKnob = [this](juce::Slider& slider, const juce::String& paramID, std::unique_ptr<SliderAttachment>& attach, juce::Colour glowColour) {
         slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);

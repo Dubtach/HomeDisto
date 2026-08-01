@@ -4,8 +4,43 @@
 
 namespace FactoryPresets
 {
+    // Sets a single parameter's stored value directly on an APVTS-shaped
+    // ValueTree copy (root "Parameters", children are <PARAM id=".." value=".."/>).
+    inline void setTreeParam(juce::ValueTree& tree, const juce::String& id, float value)
+    {
+        for (int i = 0; i < tree.getNumChildren(); ++i)
+        {
+            auto child = tree.getChild(i);
+            if (child.getProperty("id").toString() == id)
+            {
+                child.setProperty("value", value, nullptr);
+                return;
+            }
+        }
+    }
+
     inline void generateDefaults(HomeDistoAudioProcessor& processor)
     {
+        // FIX: this used to generate presets by repeatedly mutating the LIVE,
+        // host-connected APVTS via setValueNotifyingHost() -- once per
+        // parameter, across all ~30 factory presets -- then restoring the
+        // prior state afterward via setStateInformation(). That fires real
+        // host parameter-change notifications during plugin construction,
+        // before the host has even finished instantiating the plugin, which
+        // some DAWs log as automation/undo activity. It also did a full
+        // state save + apply + restore cycle 30 times on first load.
+        //
+        // Presets are now built entirely off-line: take one snapshot of the
+        // default parameter tree, then for each preset work on an in-memory
+        // copy of it and write that copy straight to disk. The live
+        // processor/host-facing state is never touched.
+
+        juce::ValueTree baselineTree = processor.apvts.copyState();
+
+        // Scratch tree that setParam/setMode below write into; pointed at a
+        // fresh copy of baselineTree for the duration of each configureLambda.
+        juce::ValueTree* currentTree = nullptr;
+
         auto createDefault = [&](const juce::String& category, const juce::String& name, std::function<void()> configureLambda)
         {
             juce::File categoryDir = processor.getPresetDirectory().getChildFile(category);
@@ -15,29 +50,29 @@ namespace FactoryPresets
             juce::File presetFile = categoryDir.getChildFile(name + ".xml");
             if (!presetFile.existsAsFile())
             {
-                juce::MemoryBlock currentStateMem;
-                processor.getStateInformation(currentStateMem);
+                juce::ValueTree presetTree = baselineTree.createCopy();
+                currentTree = &presetTree;
 
                 configureLambda();
 
-                auto state = processor.apvts.copyState();
-                if (auto xml = state.createXml())
-                    xml->writeTo(presetFile);
+                currentTree = nullptr;
 
-                processor.setStateInformation(currentStateMem.getData(), (int)currentStateMem.getSize());
+                if (auto xml = presetTree.createXml())
+                    xml->writeTo(presetFile);
             }
         };
 
-        auto& apvts = processor.apvts;
-
         auto setParam = [&](const juce::String& id, float realValue) {
-            if (auto* param = apvts.getParameter(id))
-                param->setValueNotifyingHost(param->convertTo0to1(realValue));
+            if (currentTree != nullptr)
+                setTreeParam(*currentTree, id, realValue);
         };
-        
+
         auto setMode = [&](float modeIndex) {
-            if (auto* param = apvts.getParameter("MODE"))
-                param->setValueNotifyingHost(modeIndex / 5.0f); 
+            // AudioParameterChoice stores its actual (denormalized) value as
+            // the choice index itself, so this is the index directly -- no
+            // 0-1 normalization needed here.
+            if (currentTree != nullptr)
+                setTreeParam(*currentTree, "MODE", modeIndex);
         };
 
         // ==========================================

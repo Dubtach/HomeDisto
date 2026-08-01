@@ -63,6 +63,18 @@ private:
     juce::SmoothedValue<float> smoothPunch;
     juce::SmoothedValue<float> autoGainFactor;
 
+    // Oversampling for the nonlinear waveshaping stage only (prevents aliasing
+    // from the distortion curves). 2x is always-on; 4x kicks in when the user
+    // enables "HQ" mode from the settings button in the editor.
+    std::unique_ptr<juce::dsp::Oversampling<float>> oversampling2x;
+    std::unique_ptr<juce::dsp::Oversampling<float>> oversampling4x;
+    bool lastHqState = false;
+
+    // Per-block scratch buffers for smoothed drive/punch values at the
+    // (non-oversampled) block rate, indexed and held across oversampled
+    // sub-samples. Sized in prepareToPlay to avoid realtime allocation.
+    juce::Array<float> driveEnvBuffer, punchEnvBuffer;
+
     // Real-time safe IIR coefficient updates (prevents Heap Allocation)
     void updateHighPass(juce::dsp::IIR::Coefficients<float>* state, float freq, double sampleRate);
     void updateLowPass(juce::dsp::IIR::Coefficients<float>* state, float freq, double sampleRate);

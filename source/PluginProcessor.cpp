@@ -52,6 +52,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout HomeDistoAudioProcessor::cre
     params.push_back(std::make_unique<juce::AudioParameterFloat>("PUNCH", "Punch", 0.0f, 1.0f, 0.5f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("MIX", "Mix", 0.0f, 1.0f, 0.5f));
 
+    // HQ mode: switches the internal oversampling used for the distortion
+    // stage from 2x to 4x, trading a little extra latency/CPU for cleaner
+    // high-drive tones. Wired to the gear/settings button in the editor.
+    params.push_back(std::make_unique<juce::AudioParameterBool>("HQ", "HQ Mode", false));
+
     return { params.begin(), params.end() };
 }
 
@@ -79,6 +84,26 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     
     autoGainFactor.reset(sampleRate, 0.05);
     autoGainFactor.setCurrentAndTargetValue(1.0f);
+
+    // --- Oversampling for the waveshaper (fixes aliasing on the distortion) ---
+    auto numChannels = (size_t) juce::jmax(1, getTotalNumOutputChannels());
+
+    oversampling2x = std::make_unique<juce::dsp::Oversampling<float>>(
+        numChannels, 1, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true);
+    oversampling4x = std::make_unique<juce::dsp::Oversampling<float>>(
+        numChannels, 2, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true);
+
+    oversampling2x->initProcessing((size_t) samplesPerBlock);
+    oversampling4x->initProcessing((size_t) samplesPerBlock);
+    oversampling2x->reset();
+    oversampling4x->reset();
+
+    lastHqState = apvts.getRawParameterValue("HQ")->load() > 0.5f;
+    setLatencySamples((int) (lastHqState ? oversampling4x->getLatencyInSamples()
+                                          : oversampling2x->getLatencyInSamples()));
+
+    driveEnvBuffer.resize(samplesPerBlock);
+    punchEnvBuffer.resize(samplesPerBlock);
 }
 
 void HomeDistoAudioProcessor::releaseResources() {}
@@ -245,16 +270,47 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         inRMS /= (float)totalNumOutputChannels;
     }
 
-    auto writePointers = buffer.getArrayOfWritePointers();
+    // --- Waveshaping stage, run oversampled to avoid aliasing ---
+    // FIX: previously this ran directly at the project sample rate, which
+    // means every nonlinear curve below (tanh/atan/hard-clip/sin/fuzz) was
+    // generating harmonics well above Nyquist that folded back down as
+    // audible aliasing, especially at high DRIVE. Now the block is upsampled
+    // before shaping and decimated back down afterward.
+    bool hqOn = apvts.getRawParameterValue("HQ")->load() > 0.5f;
+    auto& activeOversampling = hqOn ? *oversampling4x : *oversampling2x;
 
+    if (hqOn != lastHqState)
+    {
+        oversampling2x->reset();
+        oversampling4x->reset();
+        setLatencySamples((int) activeOversampling.getLatencyInSamples());
+        lastHqState = hqOn;
+    }
+
+    // Pre-compute the smoothed DRIVE/PUNCH envelopes at block rate; these get
+    // held across however many oversampled sub-samples correspond to each
+    // original sample.
     for (int sample = 0; sample < numSamples; ++sample)
     {
-        float currentDrive = smoothDrive.getNextValue();
-        float currentPunch = smoothPunch.getNextValue();
-        
-        for (int channel = 0; channel < totalNumOutputChannels; ++channel)
+        driveEnvBuffer.set(sample, smoothDrive.getNextValue());
+        punchEnvBuffer.set(sample, smoothPunch.getNextValue());
+    }
+
+    auto oversampledBlock = activeOversampling.processSamplesUp(block);
+    int factor = (int) activeOversampling.getOversamplingFactor();
+    auto numUpSamples = oversampledBlock.getNumSamples();
+    auto numUpChannels = oversampledBlock.getNumChannels();
+
+    for (size_t sample = 0; sample < numUpSamples; ++sample)
+    {
+        int origIndex = juce::jlimit(0, numSamples - 1, (int) (sample / (size_t) factor));
+        float currentDrive = driveEnvBuffer[origIndex];
+        float currentPunch = punchEnvBuffer[origIndex];
+
+        for (size_t channel = 0; channel < numUpChannels; ++channel)
         {
-            float x = writePointers[channel][sample] * currentDrive;
+            auto* channelData = oversampledBlock.getChannelPointer(channel);
+            float x = channelData[sample] * currentDrive;
             float out = 0.0f;
 
             switch (mode)
@@ -264,16 +320,27 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
                 case 2: out = (2.0f / juce::MathConstants<float>::pi) * std::atan(x); break;
                 case 3: out = std::max(-1.0f, std::min(1.0f, x)); break;
                 case 4: out = std::sin(x); break;
-                case 5: 
+                case 5:
                     out = x > 0.0f ? 1.0f : -1.0f;
                     // FIX: Replaced !isnan with isfinite to prevent Inf parameters from causing std::exp UB
                     if (std::isfinite(x)) out *= (1.0f - std::exp(-std::abs(x * (1.0f + currentPunch))));
                     break;
                 default: out = std::tanh(x);
             }
-            writePointers[channel][sample] = out;
+
+            // FIX: PUNCH previously only had an effect in modes 0 and 5 (the
+            // cases above that reference currentPunch directly). Every other
+            // mode ignored the knob entirely. This adds a generic
+            // punch-scaled, asymmetric harmonic boost on top of every mode's
+            // curve so the knob is always audible, everywhere.
+            out += currentPunch * 0.25f * out * std::abs(out);
+            out = juce::jlimit(-4.0f, 4.0f, out);
+
+            channelData[sample] = out;
         }
     }
+
+    activeOversampling.processSamplesDown(block);
 
     toneFilter.process(context);
     dryTone.process(dryContext);
@@ -316,6 +383,7 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     }
 
     auto dryPointers = dryBuffer.getArrayOfReadPointers();
+    auto writePointers = buffer.getArrayOfWritePointers();
 
     for (int sample = 0; sample < numSamples; ++sample)
     {
