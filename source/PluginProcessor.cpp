@@ -334,7 +334,13 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
             // punch-scaled, asymmetric harmonic boost on top of every mode's
             // curve so the knob is always audible, everywhere.
             out += currentPunch * 0.25f * out * std::abs(out);
-            out = juce::jlimit(-4.0f, 4.0f, out);
+            // FIX: this used to clamp to +/-4.0 (about +12 dBFS), which is
+            // "safe" only in the sense of not being NaN/Inf -- it still let
+            // a genuinely ear-splitting signal through to the mix stage.
+            // +/-2.0 still gives the waveshaper/punch stage real headroom to
+            // work with before the final output limiter (added below) takes
+            // over completely.
+            out = juce::jlimit(-2.0f, 2.0f, out);
 
             channelData[sample] = out;
         }
@@ -399,7 +405,19 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
             // Absolute final safety net: intercept rogue values immediately prior to host output
             float finalOut = (drySignal * (1.0f - currentMix) + wetSignal * currentMix) * currentOut;
             if (!std::isfinite(finalOut)) finalOut = 0.0f;
-            
+
+            // FIX: there was no actual output ceiling anywhere in the chain.
+            // DRIVE (up to +24 dB) feeding the shaper, plus OUTPUT (up to
+            // another +24 dB) on top, meant the final level could land well
+            // past 0 dBFS with nothing to stop it -- which is exactly what
+            // pegs a DAW meter red the moment the plugin is inserted/played,
+            // regardless of what state/preset it happens to load in.
+            // tanh() is ~identity for anything under about -6 dBFS (fully
+            // transparent for normal signal levels) and smoothly limits
+            // anything hotter than that toward +/-1.0, so it can never blast
+            // out past unity no matter what the knobs/preset are doing.
+            finalOut = std::tanh(finalOut);
+
             writePointers[channel][sample] = finalOut;
         }
     }
