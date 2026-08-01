@@ -12,13 +12,11 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     presetCombo.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(presetCombo);
 
-    // Initial preset generation hook
     updatePresetDropdown();
 
     presetCombo.onChange = [this] {
         int selectedIndex = presetCombo.getSelectedItemIndex();
         
-        // Exclude 0, since that is the "Init State"
         if (selectedIndex > 0 && selectedIndex - 1 < presetFiles.size()) 
         {
             audioProcessor.loadPreset(presetFiles[selectedIndex - 1]);
@@ -29,7 +27,6 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     addAndMakeVisible(saveButton);
     
     saveButton.onClick = [this] {
-        // Modern async safe AlertWindow pattern for JUCE plugins
         auto alert = std::make_unique<juce::AlertWindow>("Save Preset", "Enter a name for the preset:", juce::AlertWindow::NoIcon);
         alert->addTextEditor("presetName", "New Preset", "Preset Name:");
         alert->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey, 0, 0));
@@ -43,7 +40,7 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
                 if (presetName.isNotEmpty()) 
                 {
                     audioProcessor.savePreset(presetName);
-                    updatePresetDropdown(); // refresh dropdown list right after saving
+                    updatePresetDropdown(); 
                 }
             }
             delete rawAlert;
@@ -122,7 +119,7 @@ void HomeDistoAudioProcessorEditor::updatePresetDropdown()
     juce::File presetDir = audioProcessor.getPresetDirectory();
     presetFiles = presetDir.findChildFiles(juce::File::findFiles, false, "*.xml");
     
-    int itemId = 2; // IDs must be > 0 and 1 is taken by "Init State"
+    int itemId = 2; 
     for (const auto& file : presetFiles)
     {
         presetCombo.addItem(file.getFileNameWithoutExtension(), itemId++);
@@ -194,7 +191,10 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawLine(25, 65, 695, 65, 2.0f); 
 
     drawShadedCard(g, juce::Rectangle<float>(20, 80, 230, 175), juce::Colour(0xFF00E5FF));
-    drawShadedCard(g, juce::Rectangle<float>(20, 265, 125, 125), juce::Colour(0xFF00FF87));
+    
+    // Fixed: Expanded FILTER card width from 125 to 230 to match MODE card layout
+    drawShadedCard(g, juce::Rectangle<float>(20, 265, 230, 125), juce::Colour(0xFF00FF87));
+    
     drawShadedCard(g, juce::Rectangle<float>(260, 80, 260, 310), juce::Colour(0xFFB900FF));
     drawShadedCard(g, juce::Rectangle<float>(530, 80, 170, 310), juce::Colour(0xFFFF007F));
 
