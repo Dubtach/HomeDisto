@@ -22,6 +22,7 @@ HomeDistoAudioProcessor::HomeDistoAudioProcessor()
     highCutFilter.state = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 20000.0f);
     toneFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighShelf(44100.0, 1000.0f, 0.707f, 1.0f);
     smoothFilter.state = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 20000.0f);
+    dcBlockerFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighPass(44100.0, 15.0f);
     
     dryLowCut.state = lowCutFilter.state;
     dryHighCut.state = highCutFilter.state;
@@ -83,12 +84,22 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     highCutFilter.prepare(spec);
     toneFilter.prepare(spec);
     smoothFilter.prepare(spec);
+    dcBlockerFilter.prepare(spec);
+    dcBlockerFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighPass(sampleRate, 15.0f);
     
     dryLowCut.prepare(spec);
     dryHighCut.prepare(spec);
     dryTone.prepare(spec);
 
-    dryBuffer.setSize(getTotalNumOutputChannels(), samplesPerBlock);
+    // FIX: front-load a generous cushion (8192 samples, or the host's
+    // reported block size if that's bigger) instead of exactly the block
+    // size the host happens to report right now. Reaper's Anticipative FX
+    // processing can call processBlock() with much bigger blocks than
+    // prepareToPlay() advertised; sizing for that up front means the
+    // fallback growth path in ensureCapacityFor() (a real, if rare,
+    // allocation on the audio thread) essentially never actually triggers.
+    const int safeInitialBlockSize = juce::jmax(samplesPerBlock, 8192);
+    dryBuffer.setSize(getTotalNumOutputChannels(), safeInitialBlockSize);
 
     smoothDrive.reset(sampleRate, 0.02);
     smoothOut.reset(sampleRate, 0.02);
@@ -97,6 +108,14 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     
     autoGainFactor.reset(sampleRate, 0.05);
     autoGainFactor.setCurrentAndTargetValue(1.0f);
+
+    // NEW: seed the block-rate filter-cutoff smoothers from the actual
+    // current parameter values, so the very first block after load doesn't
+    // ramp in from stale defaults.
+    smoothedLowCutHz = apvts.getRawParameterValue("LOW_CUT")->load();
+    smoothedHighCutHz = apvts.getRawParameterValue("HIGH_CUT")->load();
+    smoothedToneDb = apvts.getRawParameterValue("TONE")->load() * 6.0f;
+    smoothedDeFizzHz = juce::jmap(apvts.getRawParameterValue("SMOOTH")->load(), 0.0f, 1.0f, 20000.0f, 3000.0f);
 
     // --- Oversampling for the waveshaper (fixes aliasing on the distortion) ---
     auto numChannels = (size_t) juce::jmax(1, getTotalNumOutputChannels());
@@ -110,7 +129,7 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     // below actually (re)initializes the fresh oversampling objects instead
     // of thinking they're already sized correctly from a previous prepare.
     preparedBlockSize = 0;
-    ensureCapacityFor(samplesPerBlock);
+    ensureCapacityFor(safeInitialBlockSize);
 
     lastHqState = apvts.getRawParameterValue("HQ")->load() > 0.5f;
     setLatencySamples((int) (lastHqState ? oversampling4x->getLatencyInSamples()
@@ -250,15 +269,26 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     smoothMix.setTargetValue(mix);
     smoothPunch.setTargetValue(punch);
 
-    updateHighPass(lowCutFilter.state.get(), juce::jmax(20.0f, lowCut), sr);
-    updateLowPass(highCutFilter.state.get(), juce::jmin(20000.0f, highCut), sr);
+    // NEW: one-pole smoothing on the filter-cutoff parameters themselves,
+    // at block rate, before they're turned into IIR coefficients. Without
+    // this, a fast knob sweep or automation ramp on LOW_CUT/HIGH_CUT/TONE/
+    // SMOOTH could jump the cutoff enough in a single block to click.
+    // coeff ~0.25 settles in roughly 8-12 blocks (a couple hundred ms),
+    // fast enough to feel responsive, slow enough to not click.
+    constexpr float filterSmoothingCoeff = 0.25f;
+    smoothedLowCutHz  = onePoleApproach(smoothedLowCutHz,  lowCut,        filterSmoothingCoeff);
+    smoothedHighCutHz = onePoleApproach(smoothedHighCutHz, highCut,       filterSmoothingCoeff);
+    smoothedToneDb    = onePoleApproach(smoothedToneDb,    tone * 6.0f,   filterSmoothingCoeff);
+
+    updateHighPass(lowCutFilter.state.get(), juce::jmax(20.0f, smoothedLowCutHz), sr);
+    updateLowPass(highCutFilter.state.get(), juce::jmin(20000.0f, smoothedHighCutHz), sr);
     float toneFreq = 1000.0f; 
-    float toneDb = tone * 6.0f; 
-    updateHighShelf(toneFilter.state.get(), toneFreq, 0.707f, juce::Decibels::decibelsToGain(toneDb), sr);
+    updateHighShelf(toneFilter.state.get(), toneFreq, 0.707f, juce::Decibels::decibelsToGain(smoothedToneDb), sr);
 
     float smoothAmt = apvts.getRawParameterValue("SMOOTH")->load();
-    float smoothFreq = juce::jmap(smoothAmt, 0.0f, 1.0f, 20000.0f, 3000.0f);
-    updateLowPass(smoothFilter.state.get(), smoothFreq, sr);
+    float smoothFreqTarget = juce::jmap(smoothAmt, 0.0f, 1.0f, 20000.0f, 3000.0f);
+    smoothedDeFizzHz = onePoleApproach(smoothedDeFizzHz, smoothFreqTarget, filterSmoothingCoeff);
+    updateLowPass(smoothFilter.state.get(), smoothedDeFizzHz, sr);
 
     // FIX: grow the oversampling + envelope scratch buffers if this block is
     // bigger than anything we've prepared for (see ensureCapacityFor for why).
@@ -400,6 +430,12 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
 
     activeOversampling.processSamplesDown(block);
 
+    // NEW: DC blocker, right off the back of the waveshaper -- this is
+    // exactly where TUBE mode's intentional asymmetry (and any future
+    // asymmetric curve) introduces a DC offset. Doing it here, before
+    // SMOOTH/TONE, keeps those stages working on a zero-centered signal.
+    dcBlockerFilter.process(context);
+
     // NEW: de-fizz -- tames the harsh upper-harmonic content the waveshaper
     // just generated, before the user-controlled TONE shelf gets applied.
     smoothFilter.process(context);
@@ -489,9 +525,25 @@ void HomeDistoAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 void HomeDistoAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
-    if (xmlState.get() != nullptr)
-        if (xmlState->hasTagName (apvts.state.getType()))
-            apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
+    if (xmlState != nullptr && xmlState->hasTagName (apvts.state.getType()))
+    {
+        // FIX: hosts are permitted to call setStateInformation() from any
+        // thread -- some genuinely do this on a background project-loading
+        // thread rather than the message thread. apvts.replaceState() swaps
+        // out the entire parameter ValueTree and rewires its internal
+        // listeners; it is only safe to call on the message thread. Doing
+        // that swap concurrently with the audio thread reading parameters
+        // is exactly the "XML parser overwriting variables the audio thread
+        // is reading" crash scenario. Parsing the XML into a standalone
+        // ValueTree is self-contained and safe on any thread; only the
+        // actual replaceState() call needs to be deferred.
+        juce::ValueTree newState = juce::ValueTree::fromXml (*xmlState);
+
+        juce::MessageManager::callAsync ([this, newState]() mutable
+        {
+            apvts.replaceState (newState);
+        });
+    }
 }
 
 juce::File HomeDistoAudioProcessor::getPresetDirectory()
@@ -548,6 +600,12 @@ void HomeDistoAudioProcessor::savePreset(const juce::String& name)
 
 void HomeDistoAudioProcessor::loadPreset(const juce::File& file)
 {
+    // NOTE: unlike setStateInformation (which a host can call from any
+    // thread), this is only ever invoked from editor button/menu callbacks,
+    // which JUCE guarantees run on the message thread -- so calling
+    // apvts.replaceState() directly here is safe as written. If this is
+    // ever called from anywhere else, route it through the same
+    // MessageManager::callAsync pattern used in setStateInformation.
     if (file.existsAsFile())
     {
         std::unique_ptr<juce::XmlElement> xmlState = juce::XmlDocument::parse(file);

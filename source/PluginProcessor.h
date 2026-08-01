@@ -44,6 +44,14 @@ public:
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameters();
 
+    // NEW: DC blocker. TUBE mode intentionally clips the positive and
+    // negative halves of the waveform differently (that asymmetry is what
+    // makes it sound like a tube) -- but any asymmetric waveshaper shifts
+    // the waveform's average away from zero. Left alone that eats headroom
+    // and can produce a click when a note starts/stops or when the plugin
+    // is bypassed/enabled. Always-on, fixed ~15 Hz, not user-controllable.
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> dcBlockerFilter;
+
     // DSP Components (Wet Path)
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> lowCutFilter;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> highCutFilter;
@@ -70,6 +78,22 @@ private:
     juce::SmoothedValue<float> smoothPunch;
     juce::SmoothedValue<float> autoGainFactor;
 
+    // NEW: filter-cutoff smoothing. LOW_CUT/HIGH_CUT/TONE/SMOOTH previously
+    // recalculated their IIR coefficients every block straight from the raw,
+    // un-smoothed parameter value -- a fast knob sweep or automation ramp
+    // could jump the cutoff enough in one block to click. These are simple
+    // one-pole smoothers on the *parameter values themselves*, updated once
+    // per block (filter coefficients are already only recomputed once per
+    // block, not per-sample, so this is smoothed at the right rate).
+    float smoothedLowCutHz = 20.0f;
+    float smoothedHighCutHz = 20000.0f;
+    float smoothedToneDb = 0.0f;
+    float smoothedDeFizzHz = 20000.0f;
+    static float onePoleApproach(float current, float target, float coeff) noexcept
+    {
+        return current + (target - current) * coeff;
+    }
+
     // Oversampling for the nonlinear waveshaping stage only (prevents aliasing
     // from the distortion curves). 2x is always-on; 4x kicks in when the user
     // enables "HQ" mode from the settings button in the editor.
@@ -83,6 +107,9 @@ private:
     // can call processBlock() with larger blocks than prepareToPlay ever saw.
     // Track the largest block size we've actually prepared for so we can grow
     // everything on demand instead of silently overrunning fixed buffers.
+    // prepareToPlay() also front-loads a generous cushion (see .cpp) so this
+    // growth path essentially never actually fires in practice -- growing on
+    // the audio thread is a fallback of last resort, not the normal path.
     int preparedBlockSize = 0;
     void ensureCapacityFor(int numSamples);
 
