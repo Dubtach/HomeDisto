@@ -127,10 +127,10 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour(juce::Colour(0xFF222228));
     g.drawRoundedRectangle(10, 10, 700, 390, 8, 1.5f);
 
-    // Dynamically align HOME and DISTO to look absolutely perfect together
+    // FIX: Using getStringWidthFloat to calculate font width for modern JUCE compatibility
     g.setFont(juce::FontOptions(22.0f).withName("Helvetica").withStyle("Bold"));
     g.setColour(juce::Colours::white);
-    int homeWidth = g.getCurrentFont().getStringWidth("HOME : ");
+    int homeWidth = juce::roundToInt(g.getCurrentFont().getStringWidthFloat("HOME : "));
     g.drawText("HOME : ", 25, 20, homeWidth, 30, juce::Justification::centredLeft);
     
     g.setColour(juce::Colour(0xFF00E5FF)); 
