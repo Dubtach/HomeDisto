@@ -380,24 +380,25 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont(juce::FontOptions(14.0f).withName("Helvetica").withStyle("Bold"));
 
     drawCardText("MODE", 20, 90, 230, 20, juce::Justification::centred);
-    // FIX: left-aligned and narrowed (was centred across the full card
-    // width) to make room for the 12/24/48 slope buttons in the same row.
-    drawCardText("FILTER", 32, 273, 80, 20, juce::Justification::left);
+    // FIX: back to centred (was left-aligned to squeeze the slope buttons
+    // into the same row) -- the slope buttons now get their own row right
+    // underneath instead.
+    drawCardText("FILTER", 20, 271, 230, 18, juce::Justification::centred);
 
     g.setFont(juce::FontOptions(11.0f).withName("Helvetica").withStyle("Bold"));
     // FIX: removed the static "LOW CUT"/"HIGH CUT" labels -- the sliders'
     // position and the curve graphic already make it obvious which is
     // which, and hovering/dragging now shows the exact value anyway (see
-    // constructor: setPopupDisplayEnabled). Moved the live value readout up
-    // into the space that freed up.
-    drawCardText(getFrequencyString(lowCutSlider.getValue()), 35, 300, 80, 15, juce::Justification::left); 
-    drawCardText(getFrequencyString(highCutSlider.getValue()), 155, 300, 80, 15, juce::Justification::right); 
+    // constructor: setPopupDisplayEnabled). Value readout now sits below
+    // the slope button row (see resized() for slope button placement).
+    drawCardText(getFrequencyString(lowCutSlider.getValue()), 35, 310, 80, 15, juce::Justification::left); 
+    drawCardText(getFrequencyString(highCutSlider.getValue()), 155, 310, 80, 15, juce::Justification::right); 
 
     float lowProp = lowCutSlider.valueToProportionOfLength(lowCutSlider.getValue());
     float lowX = lowCutSlider.getX() + (lowProp * lowCutSlider.getWidth());
     float highProp = highCutSlider.valueToProportionOfLength(highCutSlider.getValue());
     float highX = highCutSlider.getX() + (highProp * highCutSlider.getWidth());
-    float graphY = 345.0f;
+    float graphY = 353.0f;
 
     g.setColour(juce::Colours::black.withAlpha(0.2f));
     g.drawLine(35, graphY, 235, graphY, 2.0f); 
@@ -411,10 +412,10 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     float cornerOffset = slopeIdx == 0 ? 10.0f : (slopeIdx == 1 ? 5.0f : 1.5f);
 
     juce::Path filterCurve; 
-    filterCurve.startNewSubPath(35, 375);
-    filterCurve.cubicTo(lowX - cornerOffset, 375, lowX - cornerOffset, graphY, lowX, graphY);
+    filterCurve.startNewSubPath(35, 383);
+    filterCurve.cubicTo(lowX - cornerOffset, 383, lowX - cornerOffset, graphY, lowX, graphY);
     filterCurve.lineTo(highX, graphY);
-    filterCurve.cubicTo(highX + cornerOffset, graphY, highX + cornerOffset, 375, 235, 375);
+    filterCurve.cubicTo(highX + cornerOffset, graphY, highX + cornerOffset, 383, 235, 383);
     
     g.setColour(juce::Colours::black.withAlpha(0.4f));
     g.strokePath(filterCurve, juce::PathStrokeType(3.5f), juce::AffineTransform::translation(0, 1.5f));
@@ -479,12 +480,13 @@ void HomeDistoAudioProcessorEditor::resized()
         modeButtons[i].setBounds(35 + (col * 105), 115 + (row * 44), 95, 32);
     }
 
-    lowCutSlider.setBounds(30, 325, 90, 30);  
-    highCutSlider.setBounds(150, 325, 90, 30); 
+    lowCutSlider.setBounds(30, 330, 90, 26);  
+    highCutSlider.setBounds(150, 330, 90, 26); 
 
-    // NEW: slope buttons sit in the FILTER title row, right side of the card.
+    // NEW: slope buttons now get their own centred row directly under the
+    // FILTER title, instead of squeezed into the title row.
     for (int i = 0; i < 3; ++i)
-        slopeButtons[i].setBounds(122 + i * 38, 274, 34, 18);
+        slopeButtons[i].setBounds(76 + i * 42, 291, 34, 16);
 
     driveKnob.setBounds(315, 115, 150, 150); 
     toneKnob.setBounds(290, 285, 70, 70);
