@@ -430,5 +430,5 @@ void HomeDistoAudioProcessorEditor::resized()
     autoToggle.setBounds(615, 90, 75, 20); 
     
     mixKnob.setBounds(580, 290, 70, 70);
-    mixLockButton.setBounds(580 + 70 - 18, 290, 18, 18);
+    mixLockButton.setBounds(580 + 120 - 18, 290, 18, 18);
 }
