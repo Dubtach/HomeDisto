@@ -104,7 +104,7 @@ public:
             g.strokePath(tickPath, juce::PathStrokeType(3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
         
-        // Matching Dark Text with Drop Shadow (Just like the cards)
+        // Matching Dark Text with Drop Shadow aligned exactly with the "OUTPUT" label
         g.setFont(juce::FontOptions(fontSize).withName("Helvetica").withStyle("Bold"));
         auto textBounds = button.getLocalBounds().toFloat().withTrimmedLeft(tickWidth + 6.0f);
         
@@ -154,22 +154,35 @@ public:
         // Standard Toggle Buttons (Modes)
         if (button.getToggleState())
         {
-            g.setColour(juce::Colour(0xFF111114)); 
+            // Physical drop shadow
+            g.setColour(juce::Colours::black.withAlpha(0.4f));
+            g.fillRoundedRectangle(bounds.translated(0.0f, 2.0f), 4.0f);
+            
+            // Deep, high-contrast Black Core
+            g.setColour(juce::Colour(0xFF09090B)); 
             g.fillRoundedRectangle(bounds, 4.0f);
             
+            // Thick, bright white indicator bar on the left
             g.setColour(juce::Colours::white);
-            g.fillRoundedRectangle(0, 0, 4.0f, bounds.getHeight(), 2.0f);
+            g.fillRoundedRectangle(0, 0, 6.0f, bounds.getHeight(), 2.0f);
+            
+            // Very subtle border to define shape
+            g.setColour(juce::Colours::white.withAlpha(0.15f));
             g.drawRoundedRectangle(bounds, 4.0f, 1.0f);
         }
         else if (shouldDrawButtonAsHighlighted)
         {
-            g.setColour(juce::Colour(0xFF222228).withAlpha(0.6f));
+            g.setColour(juce::Colour(0xFF1E1E24).withAlpha(0.8f));
             g.fillRoundedRectangle(bounds, 4.0f);
+            g.setColour(juce::Colours::black.withAlpha(0.2f));
+            g.drawRoundedRectangle(bounds, 4.0f, 1.0f);
         }
         else
         {
-            g.setColour(juce::Colour(0xFF121215).withAlpha(0.7f));
+            g.setColour(juce::Colour(0xFF121215).withAlpha(0.6f));
             g.fillRoundedRectangle(bounds, 4.0f);
+            g.setColour(juce::Colours::black.withAlpha(0.15f));
+            g.drawRoundedRectangle(bounds, 4.0f, 1.0f);
         }
     }
 
@@ -177,22 +190,31 @@ public:
     {
         if (button.getName() == "SAVE" || button.getName() == "SETTINGS") return;
         
-        g.setFont(juce::FontOptions(11.0f).withName("Helvetica").withStyle(button.getToggleState() ? "Bold" : "Plain"));
-        g.setColour(button.getToggleState() ? juce::Colours::white : juce::Colours::white.withAlpha(0.6f));
-        g.drawText(button.getButtonText(), button.getLocalBounds(), juce::Justification::centred);
+        // Slightly larger font for the chunkier mode buttons
+        g.setFont(juce::FontOptions(12.0f).withName("Helvetica").withStyle(button.getToggleState() ? "Bold" : "Plain"));
+        
+        if (button.getToggleState())
+        {
+            g.setColour(juce::Colours::white);
+            // Trim 6px from left to perfectly visually center text despite the white accent bar
+            g.drawText(button.getButtonText(), button.getLocalBounds().withTrimmedLeft(6), juce::Justification::centred);
+        }
+        else
+        {
+            g.setColour(juce::Colours::white.withAlpha(0.65f));
+            g.drawText(button.getButtonText(), button.getLocalBounds(), juce::Justification::centred);
+        }
     }
 
     void drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
                            float sliderPos, float minSliderPos, float maxSliderPos,
                            const juce::Slider::SliderStyle style, juce::Slider& slider) override
     {
-        // Dark Track line
         g.setColour(juce::Colour(0xFF000000).withAlpha(0.5f));
         g.fillRoundedRectangle((float)x, (float)y + (float)height * 0.5f - 2.0f, (float)width, 4.0f, 2.0f);
 
-        // Thumb Glow & Core
         g.setColour(juce::Colours::black.withAlpha(0.4f));
-        g.fillEllipse(sliderPos - 6.0f, (float)y + (float)height * 0.5f - 4.0f, 12.0f, 12.0f); // Shadow
+        g.fillEllipse(sliderPos - 6.0f, (float)y + (float)height * 0.5f - 4.0f, 12.0f, 12.0f);
 
         g.setColour(juce::Colours::white);
         g.fillEllipse(sliderPos - 5.0f, (float)y + (float)height * 0.5f - 5.0f, 10.0f, 10.0f);
@@ -214,12 +236,10 @@ private:
     HomeDistoAudioProcessor& audioProcessor;
     MinimalistSynthLookAndFeel synthLaf;
 
-    // Header UI
     juce::ComboBox presetCombo;
     juce::TextButton saveButton;
     juce::TextButton settingsButton;
 
-    // Main Knobs
     juce::Slider driveKnob;
     juce::Slider outputKnob; 
     juce::Slider toneKnob;
@@ -227,11 +247,9 @@ private:
     juce::Slider mixKnob;
     juce::ToggleButton autoToggle;
     
-    // Mode List
     juce::TextButton modeButtons[6];
     juce::StringArray modeNames = { "PUNCH", "TUBE", "TAPE", "DIGITAL", "CRUNCH", "FUZZ" };
     
-    // Filter Sliders
     juce::Slider lowCutSlider;
     juce::Slider highCutSlider;
 

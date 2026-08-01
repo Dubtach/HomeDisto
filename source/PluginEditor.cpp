@@ -28,7 +28,6 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
         attach = std::make_unique<SliderAttachment>(audioProcessor.apvts, paramID, slider);
     };
 
-    // Passing the theme colors to the knobs so they cast a neon halo around the bright white track
     setupKnob(driveKnob, "DRIVE", driveAttach, juce::Colour(0xFFB900FF)); 
     setupKnob(toneKnob, "TONE", toneAttach, juce::Colour(0xFFB900FF));
     setupKnob(punchKnob, "PUNCH", punchAttach, juce::Colour(0xFFB900FF));
@@ -37,7 +36,7 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     setupKnob(mixKnob, "MIX", mixAttach, juce::Colour(0xFFFF007F));
 
     autoToggle.setButtonText("AUTO");
-    autoToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFFFF007F)); // Match hot magenta section
+    autoToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFFFF007F)); 
     addAndMakeVisible(autoToggle);
     autoAttach = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "AUTO", autoToggle);
 
@@ -204,11 +203,12 @@ void HomeDistoAudioProcessorEditor::resized()
     saveButton.setBounds(620, 20, 30, 30); 
     settingsButton.setBounds(660, 20, 30, 30); 
 
+    // MODES: Adjusted grid for chunkier buttons (Height 32, wider spacing)
     for (int i = 0; i < 6; ++i) 
     {
         int col = i % 2; 
         int row = i / 2; 
-        modeButtons[i].setBounds(35 + (col * 105), 118 + (row * 42), 95, 26);
+        modeButtons[i].setBounds(35 + (col * 105), 115 + (row * 44), 95, 32);
     }
 
     lowCutSlider.setBounds(30, 325, 90, 30);  
@@ -219,6 +219,9 @@ void HomeDistoAudioProcessorEditor::resized()
     punchKnob.setBounds(420, 285, 70, 70);
 
     outputKnob.setBounds(555, 125, 120, 120); 
-    autoToggle.setBounds(620, 90, 65, 25); 
+    
+    // Pixel-perfect alignment: Uses exact same Y axis (90) and Height (20) as the "OUTPUT" label
+    autoToggle.setBounds(615, 90, 75, 20); 
+    
     mixKnob.setBounds(580, 290, 70, 70);
 }
