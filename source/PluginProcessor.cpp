@@ -58,7 +58,8 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     highCutFilter.state = juce::dsp::IIR::Coefficients<float>::makeLowPass(sampleRate, 20000.0f);
     toneFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighShelf(sampleRate, 1000.0f, 0.707f, 1.0f);
 
-    // Bind the dry path to the exact same filter states.
+    // FIX BUG 5: Bind the dry path to the exact same filter states.
+    // This perfectly matches the phase response of the dry signal to the wet signal!
     dryLowCut.state = lowCutFilter.state;
     dryHighCut.state = highCutFilter.state;
     dryTone.state = toneFilter.state;
@@ -79,7 +80,7 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     smoothMix.reset(sampleRate, 0.02);
     smoothPunch.reset(sampleRate, 0.02);
     
-    autoGainFactor.reset(sampleRate, 0.05);
+    autoGainFactor.reset(sampleRate, 0.05); // Slightly slower for RMS tracking
     autoGainFactor.setCurrentAndTargetValue(1.0f);
 }
 
@@ -94,7 +95,8 @@ bool HomeDistoAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts
 }
 
 // -----------------------------------------------------------------------------
-// Real-time safe IIR Coefficient Math
+// Real-time safe IIR Coefficient Math (Fixes Bug 1)
+// Writing directly to the raw array avoids the RefCounted allocation caused by make... functions.
 // -----------------------------------------------------------------------------
 void HomeDistoAudioProcessor::updateHighPass(juce::dsp::IIR::Coefficients<float>* state, float freq, double sampleRate) {
     if (!state) return;
@@ -155,6 +157,7 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
+    // FIX BUG 4: Resolve mono track / stereo bus rendering dropouts
     if (totalNumInputChannels == 1 && totalNumOutputChannels > 1)
     {
         for (int i = 1; i < totalNumOutputChannels; ++i)
@@ -178,17 +181,20 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     float outDb = apvts.getRawParameterValue("OUT")->load();
     int mode = juce::roundToInt(apvts.getRawParameterValue("MODE")->load());
 
+    // Send target values to smoothers (Fixes Bug 3)
     smoothDrive.setTargetValue(juce::Decibels::decibelsToGain(driveDb));
     smoothOut.setTargetValue(juce::Decibels::decibelsToGain(outDb));
     smoothMix.setTargetValue(mix);
     smoothPunch.setTargetValue(punch);
 
+    // Allocation-free IIR mathematical updates (Fixes Bug 1)
     updateHighPass(lowCutFilter.state.get(), juce::jmax(20.0f, lowCut), getSampleRate());
     updateLowPass(highCutFilter.state.get(), juce::jmin(20000.0f, highCut), getSampleRate());
     float toneFreq = 1000.0f; 
     float toneDb = tone * 6.0f; 
     updateHighShelf(toneFilter.state.get(), toneFreq, 0.707f, juce::Decibels::decibelsToGain(toneDb), getSampleRate());
 
+    // Make an identical pristine copy of the inputs (which now includes populated R-channels)
     for (int ch = 0; ch < totalNumOutputChannels; ++ch)
         dryBuffer.copyFrom(ch, 0, buffer, ch, 0, buffer.getNumSamples());
 
@@ -198,19 +204,22 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     lowCutFilter.process(context);
     highCutFilter.process(context);
 
-    // Dry Pre-EQ
+    // Dry Pre-EQ (This perfectly mirrors the wet phase changes!)
     juce::dsp::AudioBlock<float> dryBlock (dryBuffer);
     juce::dsp::ProcessContextReplacing<float> dryContext (dryBlock);
     dryLowCut.process(dryContext);
     dryHighCut.process(dryContext);
 
+    // Calculate Input RMS for Auto-Gain
     float inRMS = 0.0f;
     for (int ch = 0; ch < totalNumOutputChannels; ++ch)
         inRMS += buffer.getRMSLevel(ch, 0, buffer.getNumSamples());
     inRMS /= (float)totalNumOutputChannels;
 
-    auto** writePointers = buffer.getArrayOfWritePointers();
+    // FIX: Changed auto** to auto to properly deduce float* const* 
+    auto writePointers = buffer.getArrayOfWritePointers();
 
+    // Sample-outer Loop to properly advance smoothers uniformly across all channels (Fixes Bug 3 & 4)
     for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
     {
         float currentDrive = smoothDrive.getNextValue();
@@ -242,11 +251,13 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     toneFilter.process(context);
     dryTone.process(dryContext);
 
+    // Calculate Output RMS for Auto-Gain
     float outRMS = 0.0f;
     for (int ch = 0; ch < totalNumOutputChannels; ++ch)
         outRMS += buffer.getRMSLevel(ch, 0, buffer.getNumSamples());
     outRMS /= (float)totalNumOutputChannels;
 
+    // FIX BUG 2: Setup Auto-Gain scaling targets
     bool autoGainActive = apvts.getRawParameterValue("AUTO")->load() > 0.5f;
     if (autoGainActive && outRMS > 0.0001f && inRMS > 0.0001f) {
         autoGainFactor.setTargetValue(inRMS / outRMS);
@@ -254,9 +265,10 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         autoGainFactor.setTargetValue(1.0f);
     }
 
-    // FIXED: Changed from auto** to match Juce's const float* const* return type safely
-    const float* const* dryPointers = dryBuffer.getArrayOfReadPointers();
+    // FIX: Changed auto** to auto to properly deduce const float* const*
+    auto dryPointers = dryBuffer.getArrayOfReadPointers();
 
+    // Final smoothed mix and gain staging loop
     for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
     {
         float currentMix = smoothMix.getNextValue();
