@@ -138,6 +138,15 @@ bool HomeDistoAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts
 }
 
 // -----------------------------------------------------------------------------
+// FIX: juce::dsp::IIR::Coefficients does NOT store a0 -- its constructor
+// normalizes everything by a0 and keeps exactly 5 values internally:
+// [b0, b1, b2, a1, a2]. getRawCoefficients() therefore points at a 5-element
+// array, not 6. The old code here wrote raw[0..5] (six values), with raw[3]
+// hardcoded to 1.0f standing in for "a0" -- that overwrote the *real* a1
+// coefficient with garbage, shifted a1/a2 into the wrong slots, and wrote
+// raw[5] one element past the end of the array on every single block, for
+// every filter, continuously. That out-of-bounds write is what was
+// corrupting memory and producing the crackling/sparking noise.
 void HomeDistoAudioProcessor::updateHighPass(juce::dsp::IIR::Coefficients<float>* state, float freq, double sampleRate) {
     if (!state) return;
     freq = juce::jmin(freq, (float)(sampleRate * 0.499));
@@ -147,12 +156,11 @@ void HomeDistoAudioProcessor::updateHighPass(juce::dsp::IIR::Coefficients<float>
     double a0 = 1.0 + alpha;
     
     auto* raw = state->getRawCoefficients();
-    raw[0] = (float)((1.0 + cos_w0) / (2.0 * a0));
-    raw[1] = (float)(-(1.0 + cos_w0) / a0);      
-    raw[2] = (float)((1.0 + cos_w0) / (2.0 * a0));
-    raw[3] = 1.0f;                                
-    raw[4] = (float)(-2.0 * cos_w0 / a0);          
-    raw[5] = (float)((1.0 - alpha) / a0);         
+    raw[0] = (float)((1.0 + cos_w0) / (2.0 * a0));  // b0
+    raw[1] = (float)(-(1.0 + cos_w0) / a0);          // b1
+    raw[2] = (float)((1.0 + cos_w0) / (2.0 * a0));  // b2
+    raw[3] = (float)(-2.0 * cos_w0 / a0);            // a1
+    raw[4] = (float)((1.0 - alpha) / a0);            // a2
 }
 
 void HomeDistoAudioProcessor::updateLowPass(juce::dsp::IIR::Coefficients<float>* state, float freq, double sampleRate) {
@@ -164,12 +172,11 @@ void HomeDistoAudioProcessor::updateLowPass(juce::dsp::IIR::Coefficients<float>*
     double a0 = 1.0 + alpha;
     
     auto* raw = state->getRawCoefficients();
-    raw[0] = (float)((1.0 - cos_w0) / (2.0 * a0));
-    raw[1] = (float)((1.0 - cos_w0) / a0);
-    raw[2] = (float)((1.0 - cos_w0) / (2.0 * a0));
-    raw[3] = 1.0f;
-    raw[4] = (float)(-2.0 * cos_w0 / a0);
-    raw[5] = (float)((1.0 - alpha) / a0);
+    raw[0] = (float)((1.0 - cos_w0) / (2.0 * a0));  // b0
+    raw[1] = (float)((1.0 - cos_w0) / a0);           // b1
+    raw[2] = (float)((1.0 - cos_w0) / (2.0 * a0));  // b2
+    raw[3] = (float)(-2.0 * cos_w0 / a0);            // a1
+    raw[4] = (float)((1.0 - alpha) / a0);            // a2
 }
 
 void HomeDistoAudioProcessor::updateHighShelf(juce::dsp::IIR::Coefficients<float>* state, float freq, float Q, float gain, double sampleRate) {
@@ -182,12 +189,11 @@ void HomeDistoAudioProcessor::updateHighShelf(juce::dsp::IIR::Coefficients<float
     double a0 = (A + 1.0) - (A - 1.0) * cos_w0 + 2.0 * std::sqrt(A) * alpha;
     
     auto* raw = state->getRawCoefficients();
-    raw[0] = (float)(A * ((A + 1.0) + (A - 1.0) * cos_w0 + 2.0 * std::sqrt(A) * alpha) / a0);
-    raw[1] = (float)(-2.0 * A * ((A - 1.0) + (A + 1.0) * cos_w0) / a0);
-    raw[2] = (float)(A * ((A + 1.0) + (A - 1.0) * cos_w0 - 2.0 * std::sqrt(A) * alpha) / a0);
-    raw[3] = 1.0f;
-    raw[4] = (float)(2.0 * ((A - 1.0) - (A + 1.0) * cos_w0) / a0);
-    raw[5] = (float)(((A + 1.0) - (A - 1.0) * cos_w0 - 2.0 * std::sqrt(A) * alpha) / a0);
+    raw[0] = (float)(A * ((A + 1.0) + (A - 1.0) * cos_w0 + 2.0 * std::sqrt(A) * alpha) / a0); // b0
+    raw[1] = (float)(-2.0 * A * ((A - 1.0) + (A + 1.0) * cos_w0) / a0);                        // b1
+    raw[2] = (float)(A * ((A + 1.0) + (A - 1.0) * cos_w0 - 2.0 * std::sqrt(A) * alpha) / a0); // b2
+    raw[3] = (float)(2.0 * ((A - 1.0) - (A + 1.0) * cos_w0) / a0);                             // a1
+    raw[4] = (float)(((A + 1.0) - (A - 1.0) * cos_w0 - 2.0 * std::sqrt(A) * alpha) / a0);      // a2
 }
 // -----------------------------------------------------------------------------
 
