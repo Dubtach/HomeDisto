@@ -39,18 +39,34 @@ public:
     void prevPreset();
     
     juce::File currentPresetFile;
-
     juce::AudioProcessorValueTreeState apvts;
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameters();
 
-    // DSP Components
+    // DSP Components (Wet Path)
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> lowCutFilter;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> highCutFilter;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> toneFilter;
     
+    // DSP Components (Dry Path - matched to prevent comb filtering)
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> dryLowCut;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> dryHighCut;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> dryTone;
+    
     juce::AudioBuffer<float> dryBuffer;
+
+    // Parameter Smoothers (Anti-zipper noise)
+    juce::SmoothedValue<float> smoothDrive;
+    juce::SmoothedValue<float> smoothOut;
+    juce::SmoothedValue<float> smoothMix;
+    juce::SmoothedValue<float> smoothPunch;
+    juce::SmoothedValue<float> autoGainFactor;
+
+    // Real-time safe IIR coefficient updates (prevents Heap Allocation)
+    void updateHighPass(juce::dsp::IIR::Coefficients<float>* state, float freq, double sampleRate);
+    void updateLowPass(juce::dsp::IIR::Coefficients<float>* state, float freq, double sampleRate);
+    void updateHighShelf(juce::dsp::IIR::Coefficients<float>* state, float freq, float Q, float gain, double sampleRate);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HomeDistoAudioProcessor)
 };
