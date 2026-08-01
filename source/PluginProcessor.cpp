@@ -23,15 +23,6 @@ HomeDistoAudioProcessor::HomeDistoAudioProcessor()
     toneFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighShelf(44100.0, 1000.0f, 0.707f, 1.0f);
     smoothFilter.state = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 20000.0f);
     dcBlockerFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighPass(44100.0, 15.0f);
-    
-    dryLowCut.state = lowCutFilter.state;
-    dryHighCut.state = highCutFilter.state;
-    dryTone.state = toneFilter.state;
-    // NOTE: smoothFilter intentionally has no dry counterpart. Unlike
-    // LOW_CUT/HIGH_CUT/TONE (which shape a knob the user controls and so are
-    // matched onto the dry path to avoid comb filtering when blended), SMOOTH
-    // only exists to tame harmonics the distortion itself creates -- the dry
-    // signal never had those harmonics, so there's nothing there to tame.
 }
 
 HomeDistoAudioProcessor::~HomeDistoAudioProcessor() {}
@@ -86,10 +77,6 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     smoothFilter.prepare(spec);
     dcBlockerFilter.prepare(spec);
     dcBlockerFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighPass(sampleRate, 15.0f);
-    
-    dryLowCut.prepare(spec);
-    dryHighCut.prepare(spec);
-    dryTone.prepare(spec);
 
     // FIX: front-load a generous cushion (8192 samples, or the host's
     // reported block size if that's bigger) instead of exactly the block
@@ -100,6 +87,7 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     // allocation on the audio thread) essentially never actually triggers.
     const int safeInitialBlockSize = juce::jmax(samplesPerBlock, 8192);
     dryBuffer.setSize(getTotalNumOutputChannels(), safeInitialBlockSize);
+    outOfBandBuffer.setSize(getTotalNumOutputChannels(), safeInitialBlockSize);
 
     smoothDrive.reset(sampleRate, 0.02);
     smoothOut.reset(sampleRate, 0.02);
@@ -298,35 +286,54 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     {
         dryBuffer.setSize(juce::jmax(1, totalNumOutputChannels), numSamples, false, false, true);
     }
+    if (outOfBandBuffer.getNumChannels() < totalNumOutputChannels || outOfBandBuffer.getNumSamples() < numSamples)
+    {
+        outOfBandBuffer.setSize(juce::jmax(1, totalNumOutputChannels), numSamples, false, false, true);
+    }
 
     for (int ch = 0; ch < totalNumOutputChannels; ++ch)
         dryBuffer.copyFrom(ch, 0, buffer, ch, 0, numSamples);
 
     juce::dsp::AudioBlock<float> block (buffer);
     juce::dsp::ProcessContextReplacing<float> context (block);
-    lowCutFilter.process(context);
-    highCutFilter.process(context);
 
-    juce::dsp::AudioBlock<float> dryBlock = juce::dsp::AudioBlock<float>(dryBuffer).getSubBlock(0, (size_t)numSamples);
-    juce::dsp::ProcessContextReplacing<float> dryContext (dryBlock);
-    dryLowCut.process(dryContext);
-    dryHighCut.process(dryContext);
+    // REDESIGNED FILTER BEHAVIOR:
+    // LOW_CUT/HIGH_CUT now define a "focus band" -- only the audio inside
+    // that range gets fed to the distortion at all. Everything outside it
+    // is recovered by subtracting the band-passed signal from the original
+    // ("outOfBand = dry - band") and passed straight to the output with NO
+    // filtering and NO distortion applied to it whatsoever. Because it's a
+    // literal subtraction rather than a second independent filter, the two
+    // pieces always sum back to the original exactly -- no comb filtering,
+    // no gaps, regardless of how steep or gentle the band edges are.
+    lowCutFilter.process(context);   // buffer now holds only content above LOW_CUT
+    highCutFilter.process(context);  // buffer now holds only the LOW_CUT..HIGH_CUT band
+
+    for (int ch = 0; ch < totalNumOutputChannels; ++ch)
+    {
+        auto* dry = dryBuffer.getWritePointer(ch);
+        auto* band = buffer.getWritePointer(ch);
+        auto* outOfBand = outOfBandBuffer.getWritePointer(ch);
+        for (int s = 0; s < numSamples; ++s)
+            outOfBand[s] = dry[s] - band[s];
+    }
 
     // --- FIX: PRE-EQ BLOWUP PROTECTION ---
-    // Protects against IIR filters exploding due to rapid automation sweeps
+    // Protects against IIR filters exploding due to rapid automation sweeps.
+    // Only the focus band and its derived out-of-band complement can carry
+    // filter-instability artifacts here (dryBuffer itself is untouched raw
+    // audio and doesn't need sanitizing).
     bool wetBlewUp = false;
-    bool dryBlewUp = false;
     for (int ch = 0; ch < totalNumOutputChannels; ++ch) {
         auto* wData = buffer.getWritePointer(ch);
-        auto* dData = dryBuffer.getWritePointer(ch);
+        auto* oData = outOfBandBuffer.getWritePointer(ch);
         for (int s = 0; s < numSamples; ++s) {
             if (!std::isfinite(wData[s]) || std::abs(wData[s]) > 24.0f) {
                 wData[s] = 0.0f;
                 wetBlewUp = true;
             }
-            if (!std::isfinite(dData[s]) || std::abs(dData[s]) > 24.0f) {
-                dData[s] = 0.0f;
-                dryBlewUp = true;
+            if (!std::isfinite(oData[s]) || std::abs(oData[s]) > 24.0f) {
+                oData[s] = 0.0f;
             }
         }
     }
@@ -334,10 +341,6 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     if (wetBlewUp) {
         lowCutFilter.reset();
         highCutFilter.reset();
-    }
-    if (dryBlewUp) {
-        dryLowCut.reset();
-        dryHighCut.reset();
     }
 
     // Measure inRMS *after* sanitation to guarantee it receives finite numbers
@@ -441,27 +444,19 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     smoothFilter.process(context);
 
     toneFilter.process(context);
-    dryTone.process(dryContext);
 
     // --- FIX: POST-EQ BLOWUP PROTECTION ---
     wetBlewUp = false;
-    dryBlewUp = false;
     for (int ch = 0; ch < totalNumOutputChannels; ++ch) {
         auto* wData = buffer.getWritePointer(ch);
-        auto* dData = dryBuffer.getWritePointer(ch);
         for (int s = 0; s < numSamples; ++s) {
             if (!std::isfinite(wData[s]) || std::abs(wData[s]) > 24.0f) {
                 wData[s] = 0.0f;
                 wetBlewUp = true;
             }
-            if (!std::isfinite(dData[s]) || std::abs(dData[s]) > 24.0f) {
-                dData[s] = 0.0f;
-                dryBlewUp = true;
-            }
         }
     }
     if (wetBlewUp) toneFilter.reset();
-    if (dryBlewUp) dryTone.reset();
 
     float outRMS = 0.0f;
     if (totalNumOutputChannels > 0) {
@@ -481,6 +476,7 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     }
 
     auto dryPointers = dryBuffer.getArrayOfReadPointers();
+    auto outOfBandPointers = outOfBandBuffer.getArrayOfReadPointers();
     auto writePointers = buffer.getArrayOfWritePointers();
 
     for (int sample = 0; sample < numSamples; ++sample)
@@ -491,7 +487,15 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
 
         for (int channel = 0; channel < totalNumOutputChannels; ++channel)
         {
-            float wetSignal = writePointers[channel][sample] * currentAutoGain;
+            // REDESIGNED: "wet" is no longer the whole signal run through
+            // distortion -- it's the untouched out-of-band content plus the
+            // distorted focus band, recombined. At MIX=1 you hear the full
+            // original signal with only the LOW_CUT..HIGH_CUT range altered;
+            // at MIX=0 you hear the literal, unfiltered original (drySignal
+            // is now genuinely raw -- it never went through
+            // LOW_CUT/HIGH_CUT/TONE at all, unlike before).
+            float distortedBand = writePointers[channel][sample] * currentAutoGain;
+            float wetSignal = outOfBandPointers[channel][sample] + distortedBand;
             float drySignal = dryPointers[channel][sample];
             
             // Absolute final safety net: intercept rogue values immediately prior to host output

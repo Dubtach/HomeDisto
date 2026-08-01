@@ -27,19 +27,16 @@ public:
         addAndMakeVisible(smoothSlider);
         smoothAttach = std::make_unique<SliderAttachment>(proc.apvts, "SMOOTH", smoothSlider);
 
-        autoLabel.setText("Auto-Gain Compensation", juce::dontSendNotification);
-        autoLabel.setFont(juce::FontOptions(11.0f));
-        autoLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.6f));
-        addAndMakeVisible(autoLabel);
-        autoToggleRef.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFFFF007F));
-        addAndMakeVisible(autoToggleRef);
-        autoAttach = std::make_unique<ButtonAttachment>(proc.apvts, "AUTO", autoToggleRef);
+        // NOTE: no Auto-Gain control here on purpose -- it already has its
+        // own toggle on the main interface (next to the knobs), so putting
+        // it here too would just be a confusing duplicate control for the
+        // same parameter.
 
         openPresetsButton.setButtonText("Open Presets Folder");
         openPresetsButton.onClick = [&proc] { proc.getPresetDirectory().revealToUser(); };
         addAndMakeVisible(openPresetsButton);
 
-        setSize(260, 168);
+        setSize(260, 122);
     }
 
     void paint(juce::Graphics& g) override
@@ -58,11 +55,6 @@ public:
         smoothSlider.setBounds(b.removeFromTop(24));
         b.removeFromTop(10);
 
-        auto autoRow = b.removeFromTop(22);
-        autoToggleRef.setBounds(autoRow.removeFromLeft(24));
-        autoLabel.setBounds(autoRow);
-        b.removeFromTop(10);
-
         openPresetsButton.setBounds(b.removeFromTop(24));
     }
 
@@ -70,13 +62,10 @@ private:
     juce::ToggleButton hqToggle;
     juce::Label smoothLabel;
     juce::Slider smoothSlider;
-    juce::Label autoLabel;
-    juce::ToggleButton autoToggleRef;
     juce::TextButton openPresetsButton;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> hqAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> smoothAttach;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttach;
 };
 
 HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProcessor& p)

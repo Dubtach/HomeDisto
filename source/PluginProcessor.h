@@ -64,10 +64,16 @@ private:
     // parameter, exposed in the settings popup.
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> smoothFilter;
     
-    // DSP Components (Dry Path - matched to prevent comb filtering)
-    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> dryLowCut;
-    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> dryHighCut;
-    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> dryTone;
+    // REDESIGNED: LOW_CUT/HIGH_CUT used to filter the ENTIRE signal (both
+    // wet and a phase-matched "dry" copy), which meant content outside the
+    // band wasn't just "left undistorted" -- it was filtered out of the
+    // output altogether, on both paths. That's a normal EQ, not a focus
+    // control. Now LOW_CUT/HIGH_CUT only carve out the band that gets fed
+    // to the distortion; everything outside that band is recovered by
+    // subtraction (dry - band) and passed through completely untouched --
+    // no filtering, no distortion, phase-exact by construction. See
+    // processBlock() for the full explanation.
+    juce::AudioBuffer<float> outOfBandBuffer;
     
     juce::AudioBuffer<float> dryBuffer;
 
