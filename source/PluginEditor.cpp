@@ -130,7 +130,7 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     // FIX: Using getStringWidthFloat to calculate font width for modern JUCE compatibility
     g.setFont(juce::FontOptions(22.0f).withName("Helvetica").withStyle("Bold"));
     g.setColour(juce::Colours::white);
-    int homeWidth = juce::roundToInt(g.getCurrentFont().getStringWidthFloat("HOME : "));
+    int homeWidth = juce::roundToInt(juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), "HOME : "));
     g.drawText("HOME : ", 25, 20, homeWidth, 30, juce::Justification::centredLeft);
     
     g.setColour(juce::Colour(0xFF00E5FF)); 
