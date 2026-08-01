@@ -103,7 +103,34 @@ public:
                                bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
     {
         auto bounds = button.getLocalBounds().toFloat();
-        
+
+        if (button.getName() == "LOCK")
+        {
+            bool locked = button.getToggleState();
+            auto cX = bounds.getCentreX();
+            auto cY = bounds.getCentreY() + 1.0f;
+
+            // subtle backdrop so the icon reads clearly against the knob card
+            g.setColour(juce::Colours::black.withAlpha(shouldDrawButtonAsHighlighted ? 0.35f : 0.2f));
+            g.fillEllipse(bounds.reduced(1.0f));
+
+            juce::Colour iconColour = locked
+                ? juce::Colour(0xFF00E5FF)
+                : juce::Colours::white.withAlpha(shouldDrawButtonAsHighlighted ? 0.75f : 0.45f);
+            g.setColour(iconColour);
+
+            // shackle
+            juce::Path shackle;
+            shackle.addCentredArc(cX, cY - 3.5f, 3.0f, 3.0f, 0.0f,
+                                   juce::MathConstants<float>::pi * 1.5f,
+                                   juce::MathConstants<float>::pi * 2.5f, true);
+            g.strokePath(shackle, juce::PathStrokeType(1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+            // body
+            g.fillRoundedRectangle(cX - 3.5f, cY - 1.0f, 7.0f, 5.5f, 1.0f);
+            return;
+        }
+
         if (button.getName() == "SAVE" || button.getName() == "SETTINGS" || button.getName() == "BYPASS")
         {
             g.setColour(shouldDrawButtonAsHighlighted ? juce::Colour(0xFF2A2A30) : juce::Colour(0xFF161618));
@@ -178,7 +205,7 @@ public:
 
     void drawButtonText (juce::Graphics& g, juce::TextButton& button, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
     {
-        if (button.getName() == "SAVE" || button.getName() == "SETTINGS" || button.getName() == "BYPASS") return;
+        if (button.getName() == "SAVE" || button.getName() == "SETTINGS" || button.getName() == "BYPASS" || button.getName() == "LOCK") return;
         
         // --- NEW FIX: Check button name instead of Unicode text ---
         if (button.getName() == "PRESET_UP" || button.getName() == "PRESET_DOWN")
@@ -269,6 +296,14 @@ private:
     juce::Slider punchKnob;
     juce::Slider mixKnob;
     juce::ToggleButton autoToggle;
+
+    // NEW: lock icons for OUT/MIX. When toggled, switching presets leaves
+    // these two knobs exactly where the user left them instead of jumping
+    // to the preset's stored value. Not APVTS-backed (see
+    // HomeDistoAudioProcessor::lockOutput/lockMix) since this isn't part of
+    // "the sound" a host should automate or save -- it's a workflow toggle.
+    juce::TextButton outputLockButton;
+    juce::TextButton mixLockButton;
     
     juce::TextButton modeButtons[6];
     juce::StringArray modeNames = { "PUNCH", "TUBE", "TAPE", "DIGITAL", "CRUNCH", "FUZZ" };

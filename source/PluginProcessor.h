@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include <array>
 
 class HomeDistoAudioProcessor  : public juce::AudioProcessor
 {
@@ -41,6 +42,17 @@ public:
     juce::File currentPresetFile;
     juce::AudioProcessorValueTreeState apvts;
 
+    // NEW: preset value locks. When set, loadPreset() below will restore
+    // OUT/MIX to whatever the user had them at instead of taking the
+    // preset's stored value. Plain atomics rather than APVTS parameters on
+    // purpose -- this isn't something a host should automate or save as
+    // part of "the sound", it's a UI convenience toggled by the lock icons
+    // next to those two knobs. Only ever touched from the message thread
+    // (UI button clicks, and loadPreset() which is itself only ever called
+    // from UI callbacks), so plain std::atomic<bool> is sufficient here.
+    std::atomic<bool> lockOutput { false };
+    std::atomic<bool> lockMix { false };
+
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameters();
 
@@ -52,9 +64,18 @@ private:
     // is bypassed/enabled. Always-on, fixed ~15 Hz, not user-controllable.
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> dcBlockerFilter;
 
-    // DSP Components (Wet Path)
-    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> lowCutFilter;
-    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> highCutFilter;
+    // NEW: adjustable filter slope. LOW_CUT/HIGH_CUT used to be fixed at a
+    // single 2-pole (12 dB/oct) stage each. SLOPE now picks how many
+    // identical stages get cascaded (1/2/4 => 12/24/48 dB/oct), which is the
+    // standard way to get steeper slopes out of a biquad. All stages in an
+    // array share ONE Coefficients object (set via stage 0's .state, which
+    // is the same underlying object every other stage in the array points
+    // at) -- so updating the cutoff is still just one call, not four; only
+    // the *number of stages actually processed* changes with SLOPE.
+    static constexpr int kMaxFilterStages = 4;
+    std::array<juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>>, kMaxFilterStages> lowCutStages;
+    std::array<juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>>, kMaxFilterStages> highCutStages;
+    int lastSlopeStageCount = 1;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> toneFilter;
 
     // NEW: post-distortion "de-fizz" filter. LOW_CUT/HIGH_CUT only shape what

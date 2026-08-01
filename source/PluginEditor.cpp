@@ -11,6 +11,7 @@ public:
     {
         using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
         using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+        using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
 
         hqToggle.setButtonText("HQ Mode (4x Oversampling)");
         hqToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFF00E5FF));
@@ -27,6 +28,20 @@ public:
         addAndMakeVisible(smoothSlider);
         smoothAttach = std::make_unique<SliderAttachment>(proc.apvts, "SMOOTH", smoothSlider);
 
+        // NEW: filter slope -- how steeply LOW_CUT/HIGH_CUT roll off
+        // outside the focus band. Lives here rather than the main interface
+        // since it's a "shape the tool" setting, not something you'd sweep
+        // while playing.
+        slopeLabel.setText("Filter Slope", juce::dontSendNotification);
+        slopeLabel.setFont(juce::FontOptions(12.0f).withStyle("Bold"));
+        slopeLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.8f));
+        addAndMakeVisible(slopeLabel);
+
+        if (auto* slopeParam = dynamic_cast<juce::AudioParameterChoice*>(proc.apvts.getParameter("SLOPE")))
+            slopeBox.addItemList(slopeParam->choices, 1);
+        addAndMakeVisible(slopeBox);
+        slopeAttach = std::make_unique<ComboBoxAttachment>(proc.apvts, "SLOPE", slopeBox);
+
         // NOTE: no Auto-Gain control here on purpose -- it already has its
         // own toggle on the main interface (next to the knobs), so putting
         // it here too would just be a confusing duplicate control for the
@@ -36,7 +51,7 @@ public:
         openPresetsButton.onClick = [&proc] { proc.getPresetDirectory().revealToUser(); };
         addAndMakeVisible(openPresetsButton);
 
-        setSize(260, 122);
+        setSize(260, 190);
     }
 
     void paint(juce::Graphics& g) override
@@ -54,6 +69,9 @@ public:
         smoothLabel.setBounds(b.removeFromTop(16));
         smoothSlider.setBounds(b.removeFromTop(24));
         b.removeFromTop(10);
+        slopeLabel.setBounds(b.removeFromTop(16));
+        slopeBox.setBounds(b.removeFromTop(24));
+        b.removeFromTop(10);
 
         openPresetsButton.setBounds(b.removeFromTop(24));
     }
@@ -62,10 +80,13 @@ private:
     juce::ToggleButton hqToggle;
     juce::Label smoothLabel;
     juce::Slider smoothSlider;
+    juce::Label slopeLabel;
+    juce::ComboBox slopeBox;
     juce::TextButton openPresetsButton;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> hqAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> smoothAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> slopeAttach;
 };
 
 HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProcessor& p)
@@ -148,6 +169,20 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
 
     setupKnob(outputKnob, "OUT", outAttach, juce::Colour(0xFFFF007F)); 
     setupKnob(mixKnob, "MIX", mixAttach, juce::Colour(0xFFFF007F));
+
+    // NEW: lock icons -- when locked, changing presets leaves this knob's
+    // value alone instead of jumping to whatever the preset stored.
+    outputLockButton.setName("LOCK");
+    outputLockButton.setClickingTogglesState(true);
+    outputLockButton.setTooltip("Lock OUTPUT: presets won't change this value");
+    addAndMakeVisible(outputLockButton);
+    outputLockButton.onClick = [this] { audioProcessor.lockOutput.store(outputLockButton.getToggleState()); };
+
+    mixLockButton.setName("LOCK");
+    mixLockButton.setClickingTogglesState(true);
+    mixLockButton.setTooltip("Lock MIX: presets won't change this value");
+    addAndMakeVisible(mixLockButton);
+    mixLockButton.onClick = [this] { audioProcessor.lockMix.store(mixLockButton.getToggleState()); };
 
     autoToggle.setButtonText("AUTO");
     autoToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFFFF007F)); 
@@ -390,8 +425,10 @@ void HomeDistoAudioProcessorEditor::resized()
     punchKnob.setBounds(420, 285, 70, 70);
 
     outputKnob.setBounds(555, 125, 120, 120); 
+    outputLockButton.setBounds(555 + 120 - 18, 125, 18, 18);
     
     autoToggle.setBounds(615, 90, 75, 20); 
     
     mixKnob.setBounds(580, 290, 70, 70);
+    mixLockButton.setBounds(580 + 70 - 18, 290, 18, 18);
 }

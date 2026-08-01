@@ -18,8 +18,10 @@ HomeDistoAudioProcessor::HomeDistoAudioProcessor()
     FactoryPresets::generateDefaults(*this);
 
     // Pre-allocate filter states to prevent null-dereferences
-    lowCutFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighPass(44100.0, 20.0f);
-    highCutFilter.state = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 20000.0f);
+    auto lowCutCoeffs = juce::dsp::IIR::Coefficients<float>::makeHighPass(44100.0, 20.0f);
+    auto highCutCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 20000.0f);
+    for (auto& stage : lowCutStages)  stage.state = lowCutCoeffs;
+    for (auto& stage : highCutStages) stage.state = highCutCoeffs;
     toneFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighShelf(44100.0, 1000.0f, 0.707f, 1.0f);
     smoothFilter.state = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 20000.0f);
     dcBlockerFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighPass(44100.0, 15.0f);
@@ -61,6 +63,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout HomeDistoAudioProcessor::cre
     // complaints are exactly this, an unfiltered distortion tail.
     params.push_back(std::make_unique<juce::AudioParameterFloat>("SMOOTH", "Smooth (De-Fizz)", 0.0f, 1.0f, 0.35f));
 
+    // NEW: controls how many cascaded stages LOW_CUT/HIGH_CUT use --
+    // 12/24/48 dB/octave. Exposed in the settings popup rather than the main
+    // interface since it's a "shape the tool" control, not something you'd
+    // sweep during a mix.
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(
+        "SLOPE", "Filter Slope", juce::StringArray{ "12 dB/oct", "24 dB/oct", "48 dB/oct" }, 0));
+
     return { params.begin(), params.end() };
 }
 
@@ -71,8 +80,9 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     spec.maximumBlockSize = samplesPerBlock;
     spec.numChannels = getTotalNumOutputChannels();
 
-    lowCutFilter.prepare(spec);
-    highCutFilter.prepare(spec);
+    for (auto& stage : lowCutStages)  stage.prepare(spec);
+    for (auto& stage : highCutStages) stage.prepare(spec);
+    lastSlopeStageCount = 1;
     toneFilter.prepare(spec);
     smoothFilter.prepare(spec);
     dcBlockerFilter.prepare(spec);
@@ -268,8 +278,8 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     smoothedHighCutHz = onePoleApproach(smoothedHighCutHz, highCut,       filterSmoothingCoeff);
     smoothedToneDb    = onePoleApproach(smoothedToneDb,    tone * 6.0f,   filterSmoothingCoeff);
 
-    updateHighPass(lowCutFilter.state.get(), juce::jmax(20.0f, smoothedLowCutHz), sr);
-    updateLowPass(highCutFilter.state.get(), juce::jmin(20000.0f, smoothedHighCutHz), sr);
+    updateHighPass(lowCutStages[0].state.get(), juce::jmax(20.0f, smoothedLowCutHz), sr);
+    updateLowPass(highCutStages[0].state.get(), juce::jmin(20000.0f, smoothedHighCutHz), sr);
     float toneFreq = 1000.0f; 
     updateHighShelf(toneFilter.state.get(), toneFreq, 0.707f, juce::Decibels::decibelsToGain(smoothedToneDb), sr);
 
@@ -306,8 +316,21 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     // literal subtraction rather than a second independent filter, the two
     // pieces always sum back to the original exactly -- no comb filtering,
     // no gaps, regardless of how steep or gentle the band edges are.
-    lowCutFilter.process(context);   // buffer now holds only content above LOW_CUT
-    highCutFilter.process(context);  // buffer now holds only the LOW_CUT..HIGH_CUT band
+    // NEW: SLOPE picks how many identical stages get cascaded for a
+    // steeper roll-off: 1 stage = 12 dB/oct, 2 = 24, 4 = 48.
+    int slopeIndex = juce::roundToInt(apvts.getRawParameterValue("SLOPE")->load());
+    int slopeStageCount = (slopeIndex <= 0) ? 1 : (slopeIndex == 1 ? 2 : 4);
+    if (slopeStageCount != lastSlopeStageCount)
+    {
+        // Stages that were sitting idle may hold stale filter history;
+        // reset everything on a slope change so it doesn't click.
+        for (auto& stage : lowCutStages)  stage.reset();
+        for (auto& stage : highCutStages) stage.reset();
+        lastSlopeStageCount = slopeStageCount;
+    }
+
+    for (int i = 0; i < slopeStageCount; ++i) lowCutStages[i].process(context);   // buffer now holds only content above LOW_CUT
+    for (int i = 0; i < slopeStageCount; ++i) highCutStages[i].process(context);  // buffer now holds only the LOW_CUT..HIGH_CUT band
 
     for (int ch = 0; ch < totalNumOutputChannels; ++ch)
     {
@@ -339,8 +362,8 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     }
     // Snap filters back to reality if state history gets corrupted
     if (wetBlewUp) {
-        lowCutFilter.reset();
-        highCutFilter.reset();
+        for (auto& stage : lowCutStages)  stage.reset();
+        for (auto& stage : highCutStages) stage.reset();
     }
 
     // Measure inRMS *after* sanitation to guarantee it receives finite numbers
@@ -394,18 +417,89 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
             float x = channelData[sample] * currentDrive;
             float out = 0.0f;
 
+            // REDESIGNED: modes were sharing too much DNA -- PUNCH/TUBE/TAPE
+            // were all mild variations on tanh, and DIGITAL/FUZZ were both
+            // "smooth-ish hard saturation" once oversampled. Each mode now
+            // uses a genuinely different waveshaping mechanism so they're
+            // distinguishable by ear, not just by name. CRUNCH is untouched
+            // -- it was already doing its own thing (wavefolding).
             switch (mode)
             {
-                case 0: out = std::tanh(x) * (1.0f + currentPunch * 0.5f); break;
-                case 1: out = x > 0.0f ? std::tanh(x) : std::tanh(x * 0.8f); break;
-                case 2: out = (2.0f / juce::MathConstants<float>::pi) * std::atan(x); break;
-                case 3: out = std::max(-1.0f, std::min(1.0f, x)); break;
-                case 4: out = std::sin(x); break;
-                case 5:
-                    out = x > 0.0f ? 1.0f : -1.0f;
-                    // FIX: Replaced !isnan with isfinite to prevent Inf parameters from causing std::exp UB
-                    if (std::isfinite(x)) out *= (1.0f - std::exp(-std::abs(x * (1.0f + currentPunch))));
+                case 0:
+                    // PUNCH: the plain reference clipper. Symmetric tanh --
+                    // deliberately the "baseline" the other modes deviate
+                    // from, so it stays simple.
+                    out = std::tanh(x) * (1.0f + currentPunch * 0.5f);
                     break;
+
+                case 1:
+                {
+                    // TUBE: real even-harmonic warmth via a quadratic bias
+                    // term before saturating (x + k*x^2), not just a
+                    // slightly-different tanh slope on one side. This is
+                    // what actually gives tube-style asymmetric coloration;
+                    // the old version was too subtle to hear next to PUNCH.
+                    // The DC blocker downstream safely removes the offset
+                    // this bias creates.
+                    float biased = x + 0.22f * x * x;
+                    out = std::tanh(biased);
+                    break;
+                }
+
+                case 2:
+                {
+                    // TAPE: classic cubic soft-clip (x - x^3/3, clamped
+                    // beyond +/-1). FIX: the old atan-based curve compresses
+                    // signal even at low levels (its slope is under 1 almost
+                    // immediately), which is exactly why TAPE sounded
+                    // quieter than the other modes at matched DRIVE. Cubic
+                    // soft-clip has unity slope at x=0 -- quiet passages
+                    // pass through at the same level as other modes -- and
+                    // only rounds off once you approach the knee, which is
+                    // also a more distinct (rounder, lower-order-harmonic)
+                    // character than tanh.
+                    if (x >= 1.0f)       out = 2.0f / 3.0f;
+                    else if (x <= -1.0f) out = -2.0f / 3.0f;
+                    else                 out = x - (x * x * x) / 3.0f;
+                    break;
+                }
+
+                case 3:
+                {
+                    // DIGITAL: brick-wall clip PLUS bit-depth quantization.
+                    // FIX: a plain hard clip alone shares too much harmonic
+                    // character with FUZZ's saturation once both are
+                    // oversampled and driven hard. Quantizing on top gives
+                    // DIGITAL an actual stepped/gritty texture that reads as
+                    // "digital" and can't be mistaken for a smooth fuzz.
+                    float clipped = juce::jlimit(-1.0f, 1.0f, x);
+                    const float levels = 14.0f;
+                    out = std::round(clipped * levels) / levels;
+                    break;
+                }
+
+                case 4:
+                    // CRUNCH: unchanged -- wavefolding already gives it a
+                    // complex, metallic identity nothing else here has.
+                    out = std::sin(x);
+                    break;
+
+                case 5:
+                {
+                    // FUZZ: asymmetric bias before saturating -- real fuzz
+                    // pedals are biased/"starved" transistor circuits, which
+                    // is what gives fuzz its gated, sputtery character
+                    // rather than a clean symmetric saturation. FIX: the old
+                    // version was symmetric and, once smooth, sat too close
+                    // to DIGITAL's (now-quantized) hard clip. The DC blocker
+                    // downstream handles the resulting offset safely.
+                    float biasedX = x + 0.35f;
+                    out = biasedX > 0.0f ? 1.0f : -1.0f;
+                    if (std::isfinite(biasedX))
+                        out *= (1.0f - std::exp(-std::abs(biasedX * (1.0f + currentPunch))));
+                    break;
+                }
+
                 default: out = std::tanh(x);
             }
 
@@ -616,8 +710,21 @@ void HomeDistoAudioProcessor::loadPreset(const juce::File& file)
         
         if (xmlState != nullptr && xmlState->hasTagName(apvts.state.getType()))
         {
+            // NEW: capture the current OUT/MIX values before the preset
+            // overwrites them, so locked knobs can be restored afterward.
+            float savedOutDb = apvts.getRawParameterValue("OUT")->load();
+            float savedMix   = apvts.getRawParameterValue("MIX")->load();
+
             apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
             currentPresetFile = file;
+
+            if (lockOutput.load())
+                if (auto* p = apvts.getParameter("OUT"))
+                    p->setValueNotifyingHost(p->convertTo0to1(savedOutDb));
+
+            if (lockMix.load())
+                if (auto* p = apvts.getParameter("MIX"))
+                    p->setValueNotifyingHost(p->convertTo0to1(savedMix));
         }
     }
 }
