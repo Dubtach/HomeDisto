@@ -180,8 +180,8 @@ public:
     {
         if (button.getName() == "SAVE" || button.getName() == "SETTINGS" || button.getName() == "BYPASS") return;
         
-        // --- NEW: Draw geometric arrows for the Up/Down preset buttons ---
-        if (button.getButtonText() == "\u25B2" || button.getButtonText() == "\u25BC")
+        // --- NEW FIX: Check button name instead of Unicode text ---
+        if (button.getName() == "PRESET_UP" || button.getName() == "PRESET_DOWN")
         {
             juce::Path arrow;
             auto bounds = button.getLocalBounds().toFloat();
@@ -190,23 +190,22 @@ public:
             float w = 8.0f; // Width of the arrow base
             float h = 6.0f; // Height of the arrow
 
-            if (button.getButtonText() == "\u25B2") 
+            if (button.getName() == "PRESET_UP") 
             {
-                // Draw Up Arrow
+                // Draw flat 2D Up Arrow
                 arrow.addTriangle(cx, cy - h/2.0f, cx - w/2.0f, cy + h/2.0f, cx + w/2.0f, cy + h/2.0f);
             }
             else 
             {
-                // Draw Down Arrow
+                // Draw flat 2D Down Arrow
                 arrow.addTriangle(cx - w/2.0f, cy - h/2.0f, cx + w/2.0f, cy - h/2.0f, cx, cy + h/2.0f);
             }
 
-            // Apply the same highlighting logic used for your text
             g.setColour(juce::Colours::white.withAlpha(shouldDrawButtonAsHighlighted ? 1.0f : 0.65f));
             g.fillPath(arrow);
-            return; // Exit early so it doesn't try to draw the font
+            return; // Exit early so it doesn't try to draw any font
         }
-        // -----------------------------------------------------------------
+        // ----------------------------------------------------------
 
         // Standard text rendering for all other buttons
         g.setFont(juce::FontOptions(12.0f).withName("Helvetica").withStyle(button.getToggleState() ? "Bold" : "Plain"));

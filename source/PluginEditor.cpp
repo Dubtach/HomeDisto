@@ -14,11 +14,11 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     presetMenuButton.onClick = [this] { showPresetMenu(); };
     addAndMakeVisible(presetMenuButton);
 
-    presetUpButton.setButtonText("\u25B2"); // Up triangle
+    presetUpButton.setName("PRESET_UP"); // <-- FIX: Use standard name instead of Unicode text
     presetUpButton.onClick = [this] { audioProcessor.prevPreset(); updatePresetName(); };
     addAndMakeVisible(presetUpButton);
 
-    presetDownButton.setButtonText("\u25BC"); // Down triangle
+    presetDownButton.setName("PRESET_DOWN"); // <-- FIX: Use standard name instead of Unicode text
     presetDownButton.onClick = [this] { audioProcessor.nextPreset(); updatePresetName(); };
     addAndMakeVisible(presetDownButton);
 
