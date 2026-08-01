@@ -14,7 +14,6 @@ HomeDistoAudioProcessor::HomeDistoAudioProcessor()
                        ), apvts(*this, nullptr, "Parameters", createParameters())
 #endif
 {
-    // Generate factory presets cleanly from the separate file
     FactoryPresets::generateDefaults(*this);
 }
 
@@ -180,15 +179,46 @@ juce::File HomeDistoAudioProcessor::getPresetDirectory()
     return presetDir;
 }
 
+std::map<juce::String, juce::Array<juce::File>> HomeDistoAudioProcessor::getAllPresetsCategorized()
+{
+    std::map<juce::String, juce::Array<juce::File>> categories;
+    juce::File dir = getPresetDirectory();
+    
+    // Find all files recursively across all subfolders
+    auto files = dir.findChildFiles(juce::File::findFiles, true, "*.xml");
+    for (auto& file : files)
+    {
+        juce::String category = file.getParentDirectory().getFileName();
+        if (category == dir.getFileName()) category = "Uncategorized";
+        categories[category].add(file);
+    }
+    return categories;
+}
+
+juce::Array<juce::File> HomeDistoAudioProcessor::getFlatPresetList()
+{
+    juce::Array<juce::File> list;
+    auto categories = getAllPresetsCategorized();
+    for (auto& pair : categories)
+        for (auto& file : pair.second)
+            list.add(file);
+    return list;
+}
+
 void HomeDistoAudioProcessor::savePreset(const juce::String& name)
 {
+    // Saves inherently create a "User" sub-folder routing mechanism
+    juce::File userDir = getPresetDirectory().getChildFile("User");
+    if (!userDir.exists()) userDir.createDirectory();
+    
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
     
     if (xml != nullptr)
     {
-        juce::File presetFile = getPresetDirectory().getChildFile(name + ".xml");
+        juce::File presetFile = userDir.getChildFile(name + ".xml");
         xml->writeTo(presetFile);
+        currentPresetFile = presetFile;
     }
 }
 
@@ -201,8 +231,27 @@ void HomeDistoAudioProcessor::loadPreset(const juce::File& file)
         if (xmlState != nullptr && xmlState->hasTagName(apvts.state.getType()))
         {
             apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+            currentPresetFile = file;
         }
     }
+}
+
+void HomeDistoAudioProcessor::nextPreset()
+{
+    auto list = getFlatPresetList();
+    if (list.isEmpty()) return;
+    int index = list.indexOf(currentPresetFile);
+    index = (index + 1) % list.size(); // Loops automatically
+    loadPreset(list[index]);
+}
+
+void HomeDistoAudioProcessor::prevPreset()
+{
+    auto list = getFlatPresetList();
+    if (list.isEmpty()) return;
+    int index = list.indexOf(currentPresetFile);
+    index = (index - 1 < 0) ? list.size() - 1 : index - 1; // Loops automatically
+    loadPreset(list[index]);
 }
 
 juce::AudioProcessorEditor* HomeDistoAudioProcessor::createEditor()

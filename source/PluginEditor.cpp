@@ -9,19 +9,20 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     setSize (720, 410);
     setLookAndFeel(&synthLaf); 
 
-    presetCombo.setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(presetCombo);
+    // Replaced combo box with distinct functional buttons
+    presetMenuButton.setButtonText("Select Preset...");
+    presetMenuButton.onClick = [this] { showPresetMenu(); };
+    addAndMakeVisible(presetMenuButton);
 
-    updatePresetDropdown();
+    presetUpButton.setButtonText("\u25B2"); // Up triangle
+    presetUpButton.onClick = [this] { audioProcessor.prevPreset(); updatePresetName(); };
+    addAndMakeVisible(presetUpButton);
 
-    presetCombo.onChange = [this] {
-        int selectedIndex = presetCombo.getSelectedItemIndex();
-        
-        if (selectedIndex > 0 && selectedIndex - 1 < presetFiles.size()) 
-        {
-            audioProcessor.loadPreset(presetFiles[selectedIndex - 1]);
-        }
-    };
+    presetDownButton.setButtonText("\u25BC"); // Down triangle
+    presetDownButton.onClick = [this] { audioProcessor.nextPreset(); updatePresetName(); };
+    addAndMakeVisible(presetDownButton);
+
+    updatePresetName(); // Load active name state right away
 
     saveButton.setName("SAVE");
     addAndMakeVisible(saveButton);
@@ -40,7 +41,7 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
                 if (presetName.isNotEmpty()) 
                 {
                     audioProcessor.savePreset(presetName);
-                    updatePresetDropdown(); 
+                    updatePresetName(); 
                 }
             }
             delete rawAlert;
@@ -111,22 +112,34 @@ HomeDistoAudioProcessorEditor::~HomeDistoAudioProcessorEditor()
     setLookAndFeel(nullptr); 
 }
 
-void HomeDistoAudioProcessorEditor::updatePresetDropdown()
+void HomeDistoAudioProcessorEditor::updatePresetName()
 {
-    presetCombo.clear();
-    presetCombo.addItem("Init State", 1);
-    
-    juce::File presetDir = audioProcessor.getPresetDirectory();
-    presetFiles = presetDir.findChildFiles(juce::File::findFiles, false, "*.xml");
-    
-    int itemId = 2; 
-    for (const auto& file : presetFiles)
+    if (audioProcessor.currentPresetFile.existsAsFile())
+        presetMenuButton.setButtonText(audioProcessor.currentPresetFile.getFileNameWithoutExtension());
+    else
+        presetMenuButton.setButtonText("Select Preset...");
+}
+
+void HomeDistoAudioProcessorEditor::showPresetMenu()
+{
+    juce::PopupMenu menu;
+    auto categories = audioProcessor.getAllPresetsCategorized();
+
+    for (auto& pair : categories)
     {
-        presetCombo.addItem(file.getFileNameWithoutExtension(), itemId++);
+        juce::PopupMenu categoryMenu;
+        for (auto& file : pair.second)
+        {
+            categoryMenu.addItem(file.getFileNameWithoutExtension(), [this, file]() {
+                audioProcessor.loadPreset(file);
+                updatePresetName();
+            });
+        }
+        // Submenu label corresponds perfectly to folder name
+        menu.addSubMenu(pair.first, categoryMenu);
     }
-    
-    if (presetCombo.getSelectedId() == 0)
-        presetCombo.setSelectedId(1, juce::dontSendNotification);
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&presetMenuButton));
 }
 
 void HomeDistoAudioProcessorEditor::parameterChanged (const juce::String& parameterID, float newValue)
@@ -191,10 +204,7 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawLine(25, 65, 695, 65, 2.0f); 
 
     drawShadedCard(g, juce::Rectangle<float>(20, 80, 230, 175), juce::Colour(0xFF00E5FF));
-    
-    // Fixed: Expanded FILTER card width from 125 to 230 to match MODE card layout
     drawShadedCard(g, juce::Rectangle<float>(20, 265, 230, 125), juce::Colour(0xFF00FF87));
-    
     drawShadedCard(g, juce::Rectangle<float>(260, 80, 260, 310), juce::Colour(0xFFB900FF));
     drawShadedCard(g, juce::Rectangle<float>(530, 80, 170, 310), juce::Colour(0xFFFF007F));
 
@@ -274,7 +284,15 @@ void HomeDistoAudioProcessorEditor::paintOverChildren(juce::Graphics& g)
 
 void HomeDistoAudioProcessorEditor::resized()
 {
-    presetCombo.setBounds(210, 20, 300, 30);
+    // Mathematically split preset bounds for dedicated arrow buttons
+    auto presetArea = juce::Rectangle<int>(210, 20, 300, 30);
+    auto arrowsArea = presetArea.removeFromRight(20); 
+    
+    presetUpButton.setBounds(arrowsArea.removeFromTop(15));
+    presetDownButton.setBounds(arrowsArea);
+    
+    presetArea.removeFromRight(4); // clean gap
+    presetMenuButton.setBounds(presetArea);
     
     saveButton.setBounds(520, 20, 30, 30); 
     bypassButton.setBounds(620, 20, 30, 30);
