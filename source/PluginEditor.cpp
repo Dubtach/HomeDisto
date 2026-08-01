@@ -209,6 +209,9 @@ void HomeDistoAudioProcessorEditor::paintOverChildren(juce::Graphics& g)
 {
     if (bypassButton.getToggleState())
     {
+        // Exclude the bypass button bounds so it paints over the dark overlay
+        g.excludeClipRegion(bypassButton.getBounds());
+
         g.setColour(juce::Colours::black.withAlpha(0.70f));
         g.fillRoundedRectangle(10, 10, 700, 390, 8);
         
@@ -222,7 +225,8 @@ void HomeDistoAudioProcessorEditor::resized()
 {
     presetCombo.setBounds(210, 20, 300, 30);
     
-    saveButton.setBounds(580, 20, 30, 30); 
+    // Moved the save button next to the preset box
+    saveButton.setBounds(520, 20, 30, 30); 
     bypassButton.setBounds(620, 20, 30, 30);
     settingsButton.setBounds(660, 20, 30, 30); 
 
