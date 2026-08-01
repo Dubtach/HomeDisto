@@ -26,7 +26,7 @@ public:
         auto centreY = (float) y + (float) height * 0.5f;
         auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
 
-        // Fetch custom color for the neon glow (fallback to white)
+        // Fetch custom color for the neon glow
         auto neonColour = slider.findColour(juce::Slider::rotarySliderFillColourId);
 
         // 1. Base / Inner Shadow 
@@ -39,16 +39,17 @@ public:
         g.setColour(juce::Colour(0xFF000000).withAlpha(0.4f)); 
         g.strokePath(bgArc, juce::PathStrokeType(6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        // 3. Active LED Track with Neon Glow
+        // 3. Active LED Track
         juce::Path fillArc;
         fillArc.addCentredArc(centreX, centreY, radius, radius, 0.0f, rotaryStartAngle, angle, true);
         
-        // Outer Glow
-        g.setColour(neonColour.withAlpha(0.4f));
-        g.strokePath(fillArc, juce::PathStrokeType(12.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        // Solid Core
-        g.setColour(neonColour.brighter(0.2f));
-        g.strokePath(fillArc, juce::PathStrokeType(6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        // Outer Neon Halo
+        g.setColour(neonColour.withAlpha(0.6f));
+        g.strokePath(fillArc, juce::PathStrokeType(14.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        
+        // Solid White Core for 100% Legibility
+        g.setColour(juce::Colours::white);
+        g.strokePath(fillArc, juce::PathStrokeType(5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
         // 4. Minimalist Center Cap
         g.setColour(juce::Colours::white);
@@ -58,12 +59,60 @@ public:
         juce::Path pointer;
         pointer.startNewSubPath(centreX, centreY);
         pointer.lineTo(centreX + (radius - 7.0f) * std::sin(angle), centreY - (radius - 7.0f) * std::cos(angle));
+        
+        // Pointer Glow & Core
+        g.setColour(neonColour.withAlpha(0.5f));
+        g.strokePath(pointer, juce::PathStrokeType(6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         g.setColour(juce::Colours::white);
         g.strokePath(pointer, juce::PathStrokeType(2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         
         // 6. Subtle inner boundary ring
         g.setColour(juce::Colours::white.withAlpha(0.1f));
         g.drawEllipse(centreX - (radius - 7.0f), centreY - (radius - 7.0f), (radius - 7.0f) * 2.0f, (radius - 7.0f) * 2.0f, 1.0f);
+    }
+
+    void drawToggleButton (juce::Graphics& g, juce::ToggleButton& button, 
+                           bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
+    {
+        auto fontSize = 14.0f;
+        auto tickWidth = 16.0f;
+        
+        juce::Rectangle<float> tickBounds (0.0f, ((float) button.getHeight() - tickWidth) * 0.5f, tickWidth, tickWidth);
+        
+        // Thick Checkbox Drop Shadow
+        g.setColour(juce::Colours::black.withAlpha(0.35f));
+        g.drawRoundedRectangle(tickBounds.translated(0.0f, 1.5f), 3.0f, 2.5f);
+        
+        // Thick Checkbox Solid Outline
+        g.setColour(juce::Colour(0xFF09090B)); 
+        g.drawRoundedRectangle(tickBounds, 3.0f, 2.5f);
+        
+        if (button.getToggleState())
+        {
+            auto tickColour = button.findColour(juce::ToggleButton::tickColourId);
+            juce::Path tickPath;
+            tickPath.startNewSubPath(tickBounds.getX() + 3.0f, tickBounds.getCentreY());
+            tickPath.lineTo(tickBounds.getCentreX() - 1.0f, tickBounds.getBottom() - 4.0f);
+            tickPath.lineTo(tickBounds.getRight() - 2.0f, tickBounds.getY() + 2.0f);
+            
+            // Neon Glow for the Tick
+            g.setColour(tickColour.withAlpha(0.6f));
+            g.strokePath(tickPath, juce::PathStrokeType(6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            
+            // Crisp White Core for the Tick
+            g.setColour(juce::Colours::white);
+            g.strokePath(tickPath, juce::PathStrokeType(3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
+        
+        // Matching Dark Text with Drop Shadow (Just like the cards)
+        g.setFont(juce::FontOptions(fontSize).withName("Helvetica").withStyle("Bold"));
+        auto textBounds = button.getLocalBounds().toFloat().withTrimmedLeft(tickWidth + 6.0f);
+        
+        g.setColour(juce::Colours::black.withAlpha(0.35f));
+        g.drawText(button.getButtonText(), textBounds.translated(0.0f, 1.5f), juce::Justification::centredLeft);
+        
+        g.setColour(juce::Colour(0xFF09090B));
+        g.drawText(button.getButtonText(), textBounds, juce::Justification::centredLeft);
     }
 
     void drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour& backgroundColour,
@@ -105,7 +154,7 @@ public:
         // Standard Toggle Buttons (Modes)
         if (button.getToggleState())
         {
-            g.setColour(juce::Colour(0xFF111114)); // Deep dark when active for high contrast against cyan
+            g.setColour(juce::Colour(0xFF111114)); 
             g.fillRoundedRectangle(bounds, 4.0f);
             
             g.setColour(juce::Colours::white);
