@@ -9,13 +9,46 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     setSize (720, 410);
     setLookAndFeel(&synthLaf); 
 
-    presetCombo.addItemList({"Huge Punch", "Tape Saturation", "Digital Crush", "Warm Tube", "Heavy Fuzz"}, 1);
-    presetCombo.setSelectedId(1, juce::dontSendNotification);
     presetCombo.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(presetCombo);
 
+    // Initial preset generation hook
+    updatePresetDropdown();
+
+    presetCombo.onChange = [this] {
+        int selectedIndex = presetCombo.getSelectedItemIndex();
+        
+        // Exclude 0, since that is the "Init State"
+        if (selectedIndex > 0 && selectedIndex - 1 < presetFiles.size()) 
+        {
+            audioProcessor.loadPreset(presetFiles[selectedIndex - 1]);
+        }
+    };
+
     saveButton.setName("SAVE");
     addAndMakeVisible(saveButton);
+    
+    saveButton.onClick = [this] {
+        // Modern async safe AlertWindow pattern for JUCE plugins
+        auto alert = std::make_unique<juce::AlertWindow>("Save Preset", "Enter a name for the preset:", juce::AlertWindow::NoIcon);
+        alert->addTextEditor("presetName", "New Preset", "Preset Name:");
+        alert->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey, 0, 0));
+        alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey, 0, 0));
+
+        auto* rawAlert = alert.release();
+        rawAlert->enterModalState(true, juce::ModalCallbackFunction::create([this, rawAlert](int result) {
+            if (result == 1) 
+            {
+                juce::String presetName = rawAlert->getTextEditorContents("presetName");
+                if (presetName.isNotEmpty()) 
+                {
+                    audioProcessor.savePreset(presetName);
+                    updatePresetDropdown(); // refresh dropdown list right after saving
+                }
+            }
+            delete rawAlert;
+        }));
+    };
     
     bypassButton.setName("BYPASS");
     bypassButton.setClickingTogglesState(true);
@@ -81,6 +114,24 @@ HomeDistoAudioProcessorEditor::~HomeDistoAudioProcessorEditor()
     setLookAndFeel(nullptr); 
 }
 
+void HomeDistoAudioProcessorEditor::updatePresetDropdown()
+{
+    presetCombo.clear();
+    presetCombo.addItem("Init State", 1);
+    
+    juce::File presetDir = audioProcessor.getPresetDirectory();
+    presetFiles = presetDir.findChildFiles(juce::File::findFiles, false, "*.xml");
+    
+    int itemId = 2; // IDs must be > 0 and 1 is taken by "Init State"
+    for (const auto& file : presetFiles)
+    {
+        presetCombo.addItem(file.getFileNameWithoutExtension(), itemId++);
+    }
+    
+    if (presetCombo.getSelectedId() == 0)
+        presetCombo.setSelectedId(1, juce::dontSendNotification);
+}
+
 void HomeDistoAudioProcessorEditor::parameterChanged (const juce::String& parameterID, float newValue)
 {
     if (parameterID == "MODE")
@@ -133,7 +184,6 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont(juce::FontOptions(22.0f).withName("Helvetica").withStyle("Bold"));
     g.setColour(juce::Colours::white);
     
-    // Fix: Replaced Deprecated juce::GlyphArrangement with standard getCurrentFont() handling
     int homeWidth = g.getCurrentFont().getStringWidth("HOME : ");
     g.drawText("HOME : ", 25, 20, homeWidth, 30, juce::Justification::centredLeft);
     
@@ -144,7 +194,7 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawLine(25, 65, 695, 65, 2.0f); 
 
     drawShadedCard(g, juce::Rectangle<float>(20, 80, 230, 175), juce::Colour(0xFF00E5FF));
-    drawShadedCard(g, juce::Rectangle<float>(20, 265, 230, 125), juce::Colour(0xFF00FF87));
+    drawShadedCard(g, juce::Rectangle<float>(20, 265, 125, 125), juce::Colour(0xFF00FF87));
     drawShadedCard(g, juce::Rectangle<float>(260, 80, 260, 310), juce::Colour(0xFFB900FF));
     drawShadedCard(g, juce::Rectangle<float>(530, 80, 170, 310), juce::Colour(0xFFFF007F));
 

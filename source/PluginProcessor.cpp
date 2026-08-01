@@ -50,7 +50,6 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     spec.maximumBlockSize = samplesPerBlock;
     spec.numChannels = getTotalNumOutputChannels();
 
-    // Fix: Initialize states before use to avoid pointer dereference crashes
     lowCutFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighPass(sampleRate, 20.0f);
     highCutFilter.state = juce::dsp::IIR::Coefficients<float>::makeLowPass(sampleRate, 20000.0f);
     toneFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighShelf(sampleRate, 1000.0f, 0.707f, 1.0f);
@@ -59,7 +58,6 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     highCutFilter.prepare(spec);
     toneFilter.prepare(spec);
 
-    // Fix: Resize the pre-allocated dry buffer
     dryBuffer.setSize(spec.numChannels, samplesPerBlock);
 }
 
@@ -103,7 +101,6 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     float toneDb = tone * 6.0f; 
     *toneFilter.state = *juce::dsp::IIR::Coefficients<float>::makeHighShelf(getSampleRate(), toneFreq, 0.707f, juce::Decibels::decibelsToGain(toneDb));
 
-    // Fix: Safely copy parameters without real-time dynamic allocations
     for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
         dryBuffer.copyFrom(ch, 0, buffer, ch, 0, buffer.getNumSamples());
 
@@ -121,30 +118,18 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
             float x = channelData[sample] * driveGain;
             float out = 0.0f;
 
-            // Fix: Integrate proper multi-mode distortion DSP
             switch (mode)
             {
-                case 0: // PUNCH
-                    out = std::tanh(x) * (1.0f + punch * 0.5f);
-                    break;
-                case 1: // TUBE (Asymmetric Saturation)
-                    out = x > 0.0f ? std::tanh(x) : std::tanh(x * 0.8f);
-                    break;
-                case 2: // TAPE (Arctan Saturation)
-                    out = (2.0f / juce::MathConstants<float>::pi) * std::atan(x);
-                    break;
-                case 3: // DIGITAL (Hard Clipping)
-                    out = std::max(-1.0f, std::min(1.0f, x));
-                    break;
-                case 4: // CRUNCH (Wavefolder)
-                    out = std::sin(x);
-                    break;
-                case 5: // FUZZ (Hard clipping adjusted by Punch)
+                case 0: out = std::tanh(x) * (1.0f + punch * 0.5f); break;
+                case 1: out = x > 0.0f ? std::tanh(x) : std::tanh(x * 0.8f); break;
+                case 2: out = (2.0f / juce::MathConstants<float>::pi) * std::atan(x); break;
+                case 3: out = std::max(-1.0f, std::min(1.0f, x)); break;
+                case 4: out = std::sin(x); break;
+                case 5: 
                     out = x > 0.0f ? 1.0f : -1.0f;
                     out *= (1.0f - std::exp(-std::abs(x * (1.0f + punch))));
                     break;
-                default:
-                    out = std::tanh(x);
+                default: out = std::tanh(x);
             }
             channelData[sample] = out;
         }
@@ -179,6 +164,42 @@ void HomeDistoAudioProcessor::setStateInformation (const void* data, int sizeInB
     if (xmlState.get() != nullptr)
         if (xmlState->hasTagName (apvts.state.getType()))
             apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
+}
+
+juce::File HomeDistoAudioProcessor::getPresetDirectory()
+{
+    juce::File documentsDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+    juce::File presetDir = documentsDir.getChildFile("HomeDisto").getChildFile("Presets");
+    
+    if (!presetDir.exists())
+        presetDir.createDirectory();
+        
+    return presetDir;
+}
+
+void HomeDistoAudioProcessor::savePreset(const juce::String& name)
+{
+    auto state = apvts.copyState();
+    std::unique_ptr<juce::XmlElement> xml(state.createXml());
+    
+    if (xml != nullptr)
+    {
+        juce::File presetFile = getPresetDirectory().getChildFile(name + ".xml");
+        xml->writeTo(presetFile);
+    }
+}
+
+void HomeDistoAudioProcessor::loadPreset(const juce::File& file)
+{
+    if (file.existsAsFile())
+    {
+        std::unique_ptr<juce::XmlElement> xmlState = juce::XmlDocument::parse(file);
+        
+        if (xmlState != nullptr && xmlState->hasTagName(apvts.state.getType()))
+        {
+            apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+        }
+    }
 }
 
 juce::AudioProcessorEditor* HomeDistoAudioProcessor::createEditor()

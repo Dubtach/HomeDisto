@@ -243,6 +243,10 @@ private:
     juce::Slider lowCutSlider;
     juce::Slider highCutSlider;
 
+    // Preset System properties
+    juce::Array<juce::File> presetFiles;
+    void updatePresetDropdown();
+
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 

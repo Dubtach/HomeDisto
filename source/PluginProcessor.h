@@ -28,6 +28,11 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    // Preset System Methods
+    juce::File getPresetDirectory();
+    void savePreset(const juce::String& name);
+    void loadPreset(const juce::File& file);
+
     juce::AudioProcessorValueTreeState apvts;
 
 private:
@@ -38,7 +43,6 @@ private:
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> highCutFilter;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> toneFilter;
     
-    // Fix: Dedicated pre-allocated buffer
     juce::AudioBuffer<float> dryBuffer;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HomeDistoAudioProcessor)
