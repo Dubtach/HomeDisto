@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "FactoryPresets.h"
+#include <cmath>
 
 HomeDistoAudioProcessor::HomeDistoAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -16,8 +17,7 @@ HomeDistoAudioProcessor::HomeDistoAudioProcessor()
 {
     FactoryPresets::generateDefaults(*this);
 
-    // FIX: Pre-allocate filter states here to prevent null-dereference crashes 
-    // if pluginval strict-tests processBlock before prepareToPlay is called.
+    // Pre-allocate filter states to prevent null-dereferences
     lowCutFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighPass(44100.0, 20.0f);
     highCutFilter.state = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 20000.0f);
     toneFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighShelf(44100.0, 1000.0f, 0.707f, 1.0f);
@@ -152,7 +152,6 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     auto totalNumOutputChannels = getTotalNumOutputChannels();
     auto numSamples = buffer.getNumSamples();
 
-    // Prevent executing on empty buffers (common in strict testing)
     if (numSamples == 0) return;
 
     if (totalNumInputChannels == 1 && totalNumOutputChannels > 1)
@@ -178,7 +177,6 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     float outDb = apvts.getRawParameterValue("OUT")->load();
     int mode = juce::roundToInt(apvts.getRawParameterValue("MODE")->load());
 
-    // FIX: Fallback Sample Rate if host is uninitialized (prevents Division by Zero NaNs)
     double sr = getSampleRate();
     if (sr <= 0.0) sr = 44100.0;
 
@@ -193,7 +191,6 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     float toneDb = tone * 6.0f; 
     updateHighShelf(toneFilter.state.get(), toneFreq, 0.707f, juce::Decibels::decibelsToGain(toneDb), sr);
 
-    // FIX: Dynamically resize dryBuffer if pluginval injects varying/oversized blocks
     if (dryBuffer.getNumChannels() < totalNumOutputChannels || dryBuffer.getNumSamples() < numSamples)
     {
         dryBuffer.setSize(juce::jmax(1, totalNumOutputChannels), numSamples, false, false, true);
@@ -207,13 +204,40 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     lowCutFilter.process(context);
     highCutFilter.process(context);
 
-    // FIX: SubBlock prevents the DSP from processing the excess capacity of dryBuffer
     juce::dsp::AudioBlock<float> dryBlock = juce::dsp::AudioBlock<float>(dryBuffer).getSubBlock(0, (size_t)numSamples);
     juce::dsp::ProcessContextReplacing<float> dryContext (dryBlock);
     dryLowCut.process(dryContext);
     dryHighCut.process(dryContext);
 
-    // FIX: Protect against totalNumOutputChannels being 0 causing division by zero NaNs
+    // --- FIX: PRE-EQ BLOWUP PROTECTION ---
+    // Protects against IIR filters exploding due to rapid automation sweeps
+    bool wetBlewUp = false;
+    bool dryBlewUp = false;
+    for (int ch = 0; ch < totalNumOutputChannels; ++ch) {
+        auto* wData = buffer.getWritePointer(ch);
+        auto* dData = dryBuffer.getWritePointer(ch);
+        for (int s = 0; s < numSamples; ++s) {
+            if (!std::isfinite(wData[s]) || std::abs(wData[s]) > 24.0f) {
+                wData[s] = 0.0f;
+                wetBlewUp = true;
+            }
+            if (!std::isfinite(dData[s]) || std::abs(dData[s]) > 24.0f) {
+                dData[s] = 0.0f;
+                dryBlewUp = true;
+            }
+        }
+    }
+    // Snap filters back to reality if state history gets corrupted
+    if (wetBlewUp) {
+        lowCutFilter.reset();
+        highCutFilter.reset();
+    }
+    if (dryBlewUp) {
+        dryLowCut.reset();
+        dryHighCut.reset();
+    }
+
+    // Measure inRMS *after* sanitation to guarantee it receives finite numbers
     float inRMS = 0.0f;
     if (totalNumOutputChannels > 0) {
         for (int ch = 0; ch < totalNumOutputChannels; ++ch)
@@ -242,8 +266,8 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
                 case 4: out = std::sin(x); break;
                 case 5: 
                     out = x > 0.0f ? 1.0f : -1.0f;
-                    // FIX: Protect exp from returning NaN if input is NaN during strict fuzzing
-                    if (!std::isnan(x)) out *= (1.0f - std::exp(-std::abs(x * (1.0f + currentPunch))));
+                    // FIX: Replaced !isnan with isfinite to prevent Inf parameters from causing std::exp UB
+                    if (std::isfinite(x)) out *= (1.0f - std::exp(-std::abs(x * (1.0f + currentPunch))));
                     break;
                 default: out = std::tanh(x);
             }
@@ -254,6 +278,26 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     toneFilter.process(context);
     dryTone.process(dryContext);
 
+    // --- FIX: POST-EQ BLOWUP PROTECTION ---
+    wetBlewUp = false;
+    dryBlewUp = false;
+    for (int ch = 0; ch < totalNumOutputChannels; ++ch) {
+        auto* wData = buffer.getWritePointer(ch);
+        auto* dData = dryBuffer.getWritePointer(ch);
+        for (int s = 0; s < numSamples; ++s) {
+            if (!std::isfinite(wData[s]) || std::abs(wData[s]) > 24.0f) {
+                wData[s] = 0.0f;
+                wetBlewUp = true;
+            }
+            if (!std::isfinite(dData[s]) || std::abs(dData[s]) > 24.0f) {
+                dData[s] = 0.0f;
+                dryBlewUp = true;
+            }
+        }
+    }
+    if (wetBlewUp) toneFilter.reset();
+    if (dryBlewUp) dryTone.reset();
+
     float outRMS = 0.0f;
     if (totalNumOutputChannels > 0) {
         for (int ch = 0; ch < totalNumOutputChannels; ++ch)
@@ -261,11 +305,12 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         outRMS /= (float)totalNumOutputChannels;
     }
 
+    // FIX: Hard-check RMS for valid floats to ensure smoother targets never inherit NaN/Inf targets
     bool autoGainActive = apvts.getRawParameterValue("AUTO")->load() > 0.5f;
-    
-    // FIX: Final NaN protection check ensures the smoother doesn't inherit a corrupted state
-    if (autoGainActive && outRMS > 0.0001f && inRMS > 0.0001f && !std::isnan(outRMS) && !std::isnan(inRMS)) {
-        autoGainFactor.setTargetValue(inRMS / outRMS);
+    if (autoGainActive && outRMS > 0.0001f && inRMS > 0.0001f && std::isfinite(outRMS) && std::isfinite(inRMS)) {
+        // Clamp gain scaling to a strict +/- 24dB threshold
+        float target = juce::jlimit(0.063f, 15.8f, inRMS / outRMS); 
+        autoGainFactor.setTargetValue(target);
     } else {
         autoGainFactor.setTargetValue(1.0f);
     }
@@ -283,7 +328,11 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
             float wetSignal = writePointers[channel][sample] * currentAutoGain;
             float drySignal = dryPointers[channel][sample];
             
-            writePointers[channel][sample] = (drySignal * (1.0f - currentMix) + wetSignal * currentMix) * currentOut;
+            // Absolute final safety net: intercept rogue values immediately prior to host output
+            float finalOut = (drySignal * (1.0f - currentMix) + wetSignal * currentMix) * currentOut;
+            if (!std::isfinite(finalOut)) finalOut = 0.0f;
+            
+            writePointers[channel][sample] = finalOut;
         }
     }
 }
