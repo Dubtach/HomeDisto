@@ -24,7 +24,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout HomeDistoAudioProcessor::cre
     params.push_back(std::make_unique<juce::AudioParameterBool>("BYPASS", "Bypass", false));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("DRIVE", "Drive", 0.0f, 24.0f, 6.7f));
     
-    // Expanded to 6 distinct modes
     params.push_back(std::make_unique<juce::AudioParameterChoice>("MODE", "Mode", 
         juce::StringArray{"PUNCH", "TUBE", "TAPE", "DIGITAL", "CRUNCH", "FUZZ"}, 0));
         
@@ -51,9 +50,17 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     spec.maximumBlockSize = samplesPerBlock;
     spec.numChannels = getTotalNumOutputChannels();
 
+    // Fix: Initialize states before use to avoid pointer dereference crashes
+    lowCutFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighPass(sampleRate, 20.0f);
+    highCutFilter.state = juce::dsp::IIR::Coefficients<float>::makeLowPass(sampleRate, 20000.0f);
+    toneFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighShelf(sampleRate, 1000.0f, 0.707f, 1.0f);
+
     lowCutFilter.prepare(spec);
     highCutFilter.prepare(spec);
     toneFilter.prepare(spec);
+
+    // Fix: Resize the pre-allocated dry buffer
+    dryBuffer.setSize(spec.numChannels, samplesPerBlock);
 }
 
 void HomeDistoAudioProcessor::releaseResources() {}
@@ -84,8 +91,10 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     float highCut = apvts.getRawParameterValue("HIGH_CUT")->load();
     float tone = apvts.getRawParameterValue("TONE")->load();
     float mix = apvts.getRawParameterValue("MIX")->load();
+    float punch = apvts.getRawParameterValue("PUNCH")->load();
     float outDb = apvts.getRawParameterValue("OUT")->load();
     float outGain = juce::Decibels::decibelsToGain(outDb);
+    int mode = juce::roundToInt(apvts.getRawParameterValue("MODE")->load());
 
     *lowCutFilter.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(getSampleRate(), juce::jmax(20.0f, lowCut));
     *highCutFilter.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(getSampleRate(), juce::jmin(20000.0f, highCut));
@@ -94,8 +103,9 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     float toneDb = tone * 6.0f; 
     *toneFilter.state = *juce::dsp::IIR::Coefficients<float>::makeHighShelf(getSampleRate(), toneFreq, 0.707f, juce::Decibels::decibelsToGain(toneDb));
 
-    juce::AudioBuffer<float> dryBuffer;
-    dryBuffer.makeCopyOf(buffer);
+    // Fix: Safely copy parameters without real-time dynamic allocations
+    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        dryBuffer.copyFrom(ch, 0, buffer, ch, 0, buffer.getNumSamples());
 
     juce::dsp::AudioBlock<float> block (buffer);
     juce::dsp::ProcessContextReplacing<float> context (block);
@@ -108,7 +118,35 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         auto* channelData = buffer.getWritePointer(channel);
         for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
         {
-            channelData[sample] = std::tanh(channelData[sample] * driveGain);
+            float x = channelData[sample] * driveGain;
+            float out = 0.0f;
+
+            // Fix: Integrate proper multi-mode distortion DSP
+            switch (mode)
+            {
+                case 0: // PUNCH
+                    out = std::tanh(x) * (1.0f + punch * 0.5f);
+                    break;
+                case 1: // TUBE (Asymmetric Saturation)
+                    out = x > 0.0f ? std::tanh(x) : std::tanh(x * 0.8f);
+                    break;
+                case 2: // TAPE (Arctan Saturation)
+                    out = (2.0f / juce::MathConstants<float>::pi) * std::atan(x);
+                    break;
+                case 3: // DIGITAL (Hard Clipping)
+                    out = std::max(-1.0f, std::min(1.0f, x));
+                    break;
+                case 4: // CRUNCH (Wavefolder)
+                    out = std::sin(x);
+                    break;
+                case 5: // FUZZ (Hard clipping adjusted by Punch)
+                    out = x > 0.0f ? 1.0f : -1.0f;
+                    out *= (1.0f - std::exp(-std::abs(x * (1.0f + punch))));
+                    break;
+                default:
+                    out = std::tanh(x);
+            }
+            channelData[sample] = out;
         }
     }
 

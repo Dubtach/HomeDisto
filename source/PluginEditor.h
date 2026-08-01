@@ -2,7 +2,6 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
-// Minimalist, Modern UI with sleek LED-style rings and Neon Glows
 class MinimalistSynthLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
