@@ -18,7 +18,10 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     addAndMakeVisible(saveButton);
     
     bypassButton.setName("BYPASS");
+    bypassButton.setClickingTogglesState(true);
     addAndMakeVisible(bypassButton);
+    bypassAttach = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "BYPASS", bypassButton);
+    bypassButton.onClick = [this] { repaint(); };
     
     settingsButton.setName("SETTINGS");
     addAndMakeVisible(settingsButton);
@@ -127,10 +130,9 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour(juce::Colour(0xFF222228));
     g.drawRoundedRectangle(10, 10, 700, 390, 8, 1.5f);
 
-    // FIX: Using getStringWidthFloat to calculate font width for modern JUCE compatibility
     g.setFont(juce::FontOptions(22.0f).withName("Helvetica").withStyle("Bold"));
     g.setColour(juce::Colours::white);
-    int homeWidth = juce::roundToInt(juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), "HOME : "));
+    int homeWidth = juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), "HOME : ");
     g.drawText("HOME : ", 25, 20, homeWidth, 30, juce::Justification::centredLeft);
     
     g.setColour(juce::Colour(0xFF00E5FF)); 
@@ -203,16 +205,27 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     drawCardText("WET", 635, 360, 30, 15, juce::Justification::right);
 }
 
+void HomeDistoAudioProcessorEditor::paintOverChildren(juce::Graphics& g)
+{
+    if (bypassButton.getToggleState())
+    {
+        g.setColour(juce::Colours::black.withAlpha(0.70f));
+        g.fillRoundedRectangle(10, 10, 700, 390, 8);
+        
+        g.setFont(juce::FontOptions(48.0f).withName("Helvetica").withStyle("Bold"));
+        g.setColour(juce::Colours::white);
+        g.drawText("BYPASSED", 10, 10, 700, 390, juce::Justification::centred);
+    }
+}
+
 void HomeDistoAudioProcessorEditor::resized()
 {
     presetCombo.setBounds(210, 20, 300, 30);
     
-    // Positioned the 3 buttons with exact 40px symmetric gaps between them
-    saveButton.setBounds(520, 20, 30, 30); 
-    bypassButton.setBounds(590, 20, 30, 30);
+    saveButton.setBounds(580, 20, 30, 30); 
+    bypassButton.setBounds(620, 20, 30, 30);
     settingsButton.setBounds(660, 20, 30, 30); 
 
-    // MODES: Adjusted grid for chunkier buttons (Height 32, wider spacing)
     for (int i = 0; i < 6; ++i) 
     {
         int col = i % 2; 
@@ -229,7 +242,6 @@ void HomeDistoAudioProcessorEditor::resized()
 
     outputKnob.setBounds(555, 125, 120, 120); 
     
-    // Pixel-perfect alignment: Uses exact same Y axis (90) and Height (20) as the "OUTPUT" label
     autoToggle.setBounds(615, 90, 75, 20); 
     
     mixKnob.setBounds(580, 290, 70, 70);

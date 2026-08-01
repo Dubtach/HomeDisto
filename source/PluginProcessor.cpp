@@ -21,6 +21,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout HomeDistoAudioProcessor::cre
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
     
+    params.push_back(std::make_unique<juce::AudioParameterBool>("BYPASS", "Bypass", false));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("DRIVE", "Drive", 0.0f, 24.0f, 6.7f));
     
     // Expanded to 6 distinct modes
@@ -73,6 +74,9 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
 
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
+
+    if (apvts.getRawParameterValue("BYPASS")->load() > 0.5f)
+        return;
 
     float driveDb = apvts.getRawParameterValue("DRIVE")->load();
     float driveGain = juce::Decibels::decibelsToGain(driveDb);

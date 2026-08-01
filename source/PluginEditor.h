@@ -26,47 +26,37 @@ public:
         auto centreY = (float) y + (float) height * 0.5f;
         auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
 
-        // Fetch custom color for the neon glow
         auto neonColour = slider.findColour(juce::Slider::rotarySliderFillColourId);
 
-        // 1. Base / Inner Shadow 
         g.setColour(juce::Colour(0xFF0A0A0C));
         g.fillEllipse(centreX - radius + 2.0f, centreY - radius + 2.0f, (radius - 2.0f) * 2.0f, (radius - 2.0f) * 2.0f);
 
-        // 2. Background Track
         juce::Path bgArc;
         bgArc.addCentredArc(centreX, centreY, radius, radius, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
         g.setColour(juce::Colour(0xFF000000).withAlpha(0.4f)); 
         g.strokePath(bgArc, juce::PathStrokeType(6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        // 3. Active LED Track
         juce::Path fillArc;
         fillArc.addCentredArc(centreX, centreY, radius, radius, 0.0f, rotaryStartAngle, angle, true);
         
-        // Outer Neon Halo
         g.setColour(neonColour.withAlpha(0.6f));
         g.strokePath(fillArc, juce::PathStrokeType(14.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         
-        // Solid White Core for 100% Legibility
         g.setColour(juce::Colours::white);
         g.strokePath(fillArc, juce::PathStrokeType(5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        // 4. Minimalist Center Cap
         g.setColour(juce::Colours::white);
         g.fillEllipse(centreX - 3.5f, centreY - 3.5f, 7.0f, 7.0f);
 
-        // 5. Minimalist Pointer Line
         juce::Path pointer;
         pointer.startNewSubPath(centreX, centreY);
         pointer.lineTo(centreX + (radius - 7.0f) * std::sin(angle), centreY - (radius - 7.0f) * std::cos(angle));
         
-        // Pointer Glow & Core
         g.setColour(neonColour.withAlpha(0.5f));
         g.strokePath(pointer, juce::PathStrokeType(6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         g.setColour(juce::Colours::white);
         g.strokePath(pointer, juce::PathStrokeType(2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         
-        // 6. Subtle inner boundary ring
         g.setColour(juce::Colours::white.withAlpha(0.1f));
         g.drawEllipse(centreX - (radius - 7.0f), centreY - (radius - 7.0f), (radius - 7.0f) * 2.0f, (radius - 7.0f) * 2.0f, 1.0f);
     }
@@ -79,11 +69,9 @@ public:
         
         juce::Rectangle<float> tickBounds (0.0f, ((float) button.getHeight() - tickWidth) * 0.5f, tickWidth, tickWidth);
         
-        // Thick Checkbox Drop Shadow
         g.setColour(juce::Colours::black.withAlpha(0.35f));
         g.drawRoundedRectangle(tickBounds.translated(0.0f, 1.5f), 3.0f, 2.5f);
         
-        // Thick Checkbox Solid Outline
         g.setColour(juce::Colour(0xFF09090B)); 
         g.drawRoundedRectangle(tickBounds, 3.0f, 2.5f);
         
@@ -95,16 +83,13 @@ public:
             tickPath.lineTo(tickBounds.getCentreX() - 1.0f, tickBounds.getBottom() - 4.0f);
             tickPath.lineTo(tickBounds.getRight() - 2.0f, tickBounds.getY() + 2.0f);
             
-            // Neon Glow for the Tick
             g.setColour(tickColour.withAlpha(0.6f));
             g.strokePath(tickPath, juce::PathStrokeType(6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
             
-            // Crisp White Core for the Tick
             g.setColour(juce::Colours::white);
             g.strokePath(tickPath, juce::PathStrokeType(3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
         
-        // Matching Dark Text with Drop Shadow aligned exactly with the "OUTPUT" label
         g.setFont(juce::FontOptions(fontSize).withName("Helvetica").withStyle("Bold"));
         auto textBounds = button.getLocalBounds().toFloat().withTrimmedLeft(tickWidth + 6.0f);
         
@@ -153,7 +138,6 @@ public:
                 auto cX = bounds.getCentreX();
                 auto cY = bounds.getCentreY();
                 
-                // Minimalist Power Icon
                 juce::Path powerArc;
                 float gap = 0.5f; 
                 powerArc.addCentredArc(cX, cY, 6.0f, 6.0f, 0.0f, gap, juce::MathConstants<float>::twoPi - gap, true);
@@ -163,22 +147,17 @@ public:
             return;
         }
 
-        // Standard Toggle Buttons (Modes)
         if (button.getToggleState())
         {
-            // Physical drop shadow
             g.setColour(juce::Colours::black.withAlpha(0.4f));
             g.fillRoundedRectangle(bounds.translated(0.0f, 2.0f), 4.0f);
             
-            // Deep, high-contrast Black Core
             g.setColour(juce::Colour(0xFF09090B)); 
             g.fillRoundedRectangle(bounds, 4.0f);
             
-            // Thick, bright white indicator bar on the left
             g.setColour(juce::Colours::white);
             g.fillRoundedRectangle(0, 0, 6.0f, bounds.getHeight(), 2.0f);
             
-            // Very subtle border to define shape
             g.setColour(juce::Colours::white.withAlpha(0.15f));
             g.drawRoundedRectangle(bounds, 4.0f, 1.0f);
         }
@@ -202,13 +181,11 @@ public:
     {
         if (button.getName() == "SAVE" || button.getName() == "SETTINGS" || button.getName() == "BYPASS") return;
         
-        // Slightly larger font for the chunkier mode buttons
         g.setFont(juce::FontOptions(12.0f).withName("Helvetica").withStyle(button.getToggleState() ? "Bold" : "Plain"));
         
         if (button.getToggleState())
         {
             g.setColour(juce::Colours::white);
-            // Trim 6px from left to perfectly visually center text despite the white accent bar
             g.drawText(button.getButtonText(), button.getLocalBounds().withTrimmedLeft(6), juce::Justification::centred);
         }
         else
@@ -241,6 +218,7 @@ public:
     ~HomeDistoAudioProcessorEditor() override;
 
     void paint (juce::Graphics&) override;
+    void paintOverChildren (juce::Graphics&) override;
     void resized() override;
     void parameterChanged (const juce::String& parameterID, float newValue) override;
 
@@ -272,6 +250,7 @@ private:
     std::unique_ptr<SliderAttachment> driveAttach, outAttach, toneAttach, punchAttach, mixAttach;
     std::unique_ptr<SliderAttachment> lowAttach, highAttach;
     std::unique_ptr<ButtonAttachment> autoAttach;
+    std::unique_ptr<ButtonAttachment> bypassAttach;
 
     juce::String getFrequencyString(float hz);
     void drawShadedCard(juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour baseColour);
