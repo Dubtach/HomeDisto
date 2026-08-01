@@ -32,6 +32,13 @@ public:
     juce::File getPresetDirectory();
     void savePreset(const juce::String& name);
     void loadPreset(const juce::File& file);
+    
+    std::map<juce::String, juce::Array<juce::File>> getAllPresetsCategorized();
+    juce::Array<juce::File> getFlatPresetList();
+    void nextPreset();
+    void prevPreset();
+    
+    juce::File currentPresetFile;
 
     juce::AudioProcessorValueTreeState apvts;
 

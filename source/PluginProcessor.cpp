@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "FactoryPresets.h"
 
 HomeDistoAudioProcessor::HomeDistoAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -13,6 +14,8 @@ HomeDistoAudioProcessor::HomeDistoAudioProcessor()
                        ), apvts(*this, nullptr, "Parameters", createParameters())
 #endif
 {
+    // Generate factory presets cleanly from the separate file
+    FactoryPresets::generateDefaults(*this);
 }
 
 HomeDistoAudioProcessor::~HomeDistoAudioProcessor() {}
