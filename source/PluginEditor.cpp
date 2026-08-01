@@ -17,6 +17,9 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     saveButton.setName("SAVE");
     addAndMakeVisible(saveButton);
     
+    bypassButton.setName("BYPASS");
+    addAndMakeVisible(bypassButton);
+    
     settingsButton.setName("SETTINGS");
     addAndMakeVisible(settingsButton);
 
@@ -124,11 +127,14 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour(juce::Colour(0xFF222228));
     g.drawRoundedRectangle(10, 10, 700, 390, 8, 1.5f);
 
+    // Dynamically align HOME and DISTO to look absolutely perfect together
     g.setFont(juce::FontOptions(22.0f).withName("Helvetica").withStyle("Bold"));
     g.setColour(juce::Colours::white);
-    g.drawText("HOME :", 25, 20, 80, 30, juce::Justification::centredLeft);
+    int homeWidth = g.getCurrentFont().getStringWidth("HOME : ");
+    g.drawText("HOME : ", 25, 20, homeWidth, 30, juce::Justification::centredLeft);
+    
     g.setColour(juce::Colour(0xFF00E5FF)); 
-    g.drawText("DISTO", 105, 20, 80, 30, juce::Justification::centredLeft);
+    g.drawText("DISTO", 25 + homeWidth, 20, 80, 30, juce::Justification::centredLeft);
 
     g.setColour(juce::Colour(0xFF1E1E24));
     g.drawLine(25, 65, 695, 65, 2.0f); 
@@ -200,7 +206,10 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 void HomeDistoAudioProcessorEditor::resized()
 {
     presetCombo.setBounds(210, 20, 300, 30);
-    saveButton.setBounds(620, 20, 30, 30); 
+    
+    // Positioned the 3 buttons with exact 40px symmetric gaps between them
+    saveButton.setBounds(520, 20, 30, 30); 
+    bypassButton.setBounds(590, 20, 30, 30);
     settingsButton.setBounds(660, 20, 30, 30); 
 
     // MODES: Adjusted grid for chunkier buttons (Height 32, wider spacing)

@@ -120,7 +120,7 @@ public:
     {
         auto bounds = button.getLocalBounds().toFloat();
         
-        if (button.getName() == "SAVE" || button.getName() == "SETTINGS")
+        if (button.getName() == "SAVE" || button.getName() == "SETTINGS" || button.getName() == "BYPASS")
         {
             g.setColour(shouldDrawButtonAsHighlighted ? juce::Colour(0xFF2A2A30) : juce::Colour(0xFF161618));
             g.fillRoundedRectangle(bounds, 4.0f);
@@ -147,6 +147,18 @@ public:
                 g.fillEllipse(cX - 5, cY - 5, 10, 10);
                 g.setColour(juce::Colours::white);
                 g.drawEllipse(cX - 5, cY - 5, 10, 10, 1.5f);
+            }
+            else if (button.getName() == "BYPASS")
+            {
+                auto cX = bounds.getCentreX();
+                auto cY = bounds.getCentreY();
+                
+                // Minimalist Power Icon
+                juce::Path powerArc;
+                float gap = 0.5f; 
+                powerArc.addCentredArc(cX, cY, 6.0f, 6.0f, 0.0f, gap, juce::MathConstants<float>::twoPi - gap, true);
+                g.strokePath(powerArc, juce::PathStrokeType(1.5f, juce::PathStrokeType::mitered, juce::PathStrokeType::rounded));
+                g.drawLine(cX, cY - 6.0f, cX, cY + 1.0f, 1.5f);
             }
             return;
         }
@@ -188,7 +200,7 @@ public:
 
     void drawButtonText (juce::Graphics& g, juce::TextButton& button, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
     {
-        if (button.getName() == "SAVE" || button.getName() == "SETTINGS") return;
+        if (button.getName() == "SAVE" || button.getName() == "SETTINGS" || button.getName() == "BYPASS") return;
         
         // Slightly larger font for the chunkier mode buttons
         g.setFont(juce::FontOptions(12.0f).withName("Helvetica").withStyle(button.getToggleState() ? "Bold" : "Plain"));
@@ -238,6 +250,7 @@ private:
 
     juce::ComboBox presetCombo;
     juce::TextButton saveButton;
+    juce::TextButton bypassButton;
     juce::TextButton settingsButton;
 
     juce::Slider driveKnob;
