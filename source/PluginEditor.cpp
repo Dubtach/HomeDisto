@@ -184,7 +184,7 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont(juce::FontOptions(22.0f).withName("Helvetica").withStyle("Bold"));
     g.setColour(juce::Colours::white);
     
-    int homeWidth = g.getCurrentFont().getStringWidth("HOME : ");
+    int homeWidth = juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), "HOME : ");
     g.drawText("HOME : ", 25, 20, homeWidth, 30, juce::Justification::centredLeft);
     
     g.setColour(juce::Colour(0xFF00E5FF)); 
