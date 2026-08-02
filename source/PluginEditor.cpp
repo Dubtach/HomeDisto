@@ -224,25 +224,27 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     int initialMode = (int)audioProcessor.apvts.getRawParameterValue("MODE")->load();
     modeButtons[initialMode].setToggleState(true, juce::dontSendNotification);
 
-    lowCutSlider.setSliderStyle(juce::Slider::LinearHorizontal);
-    lowCutSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    addAndMakeVisible(lowCutSlider);
+    // NEW: LOW_CUT/HIGH_CUT are still real Sliders (so the APVTS attachment
+    // machinery works unchanged) but are no longer shown or directly
+    // interactive -- the filter curve graphic itself is now the control
+    // surface (see mouseDown/mouseDrag/lowHandlePos/highHandlePos). Setting
+    // them invisible also removes them from hit-testing entirely, so clicks
+    // in the graph area correctly fall through to this component's own
+    // mouse handlers instead of being swallowed by a slider underneath.
+    addChildComponent(lowCutSlider); // added but not shown
     lowAttach = std::make_unique<SliderAttachment>(audioProcessor.apvts, "LOW_CUT", lowCutSlider);
     lowCutSlider.onValueChange = [this] { repaint(); };
-    lowCutSlider.textFromValueFunction = [this](double v) { return getFrequencyString((float) v); };
-    lowCutSlider.setPopupDisplayEnabled(true, false, this);
 
-    highCutSlider.setSliderStyle(juce::Slider::LinearHorizontal);
-    highCutSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    addAndMakeVisible(highCutSlider);
+    addChildComponent(highCutSlider);
     highAttach = std::make_unique<SliderAttachment>(audioProcessor.apvts, "HIGH_CUT", highCutSlider);
     highCutSlider.onValueChange = [this] { repaint(); };
-    highCutSlider.textFromValueFunction = [this](double v) { return getFrequencyString((float) v); };
-    highCutSlider.setPopupDisplayEnabled(true, false, this);
 
-    // NEW: filter slope buttons (12/24/48 dB/oct), right in the Filter card.
+    // NEW: filter slope buttons (12/24/48 dB/oct) styled as a single
+    // segmented control (see SLOPE_BTN handling in the LookAndFeel) rather
+    // than three separate boxes.
     for (int i = 0; i < 3; ++i)
     {
+        slopeButtons[i].setName("SLOPE_BTN");
         slopeButtons[i].setButtonText(slopeButtonLabels[i]);
         slopeButtons[i].setRadioGroupId(101);
         slopeButtons[i].setClickingTogglesState(true);
@@ -314,6 +316,72 @@ void HomeDistoAudioProcessorEditor::parameterChanged (const juce::String& parame
     }
 }
 
+juce::Point<float> HomeDistoAudioProcessorEditor::lowHandlePos() const
+{
+    float prop = (float) lowCutSlider.valueToProportionOfLength(lowCutSlider.getValue());
+    return { filterGraphLeft + prop * (filterGraphRight - filterGraphLeft), filterGraphTopY };
+}
+
+juce::Point<float> HomeDistoAudioProcessorEditor::highHandlePos() const
+{
+    float prop = (float) highCutSlider.valueToProportionOfLength(highCutSlider.getValue());
+    return { filterGraphLeft + prop * (filterGraphRight - filterGraphLeft), filterGraphTopY };
+}
+
+namespace
+{
+    constexpr float kFilterHandleHitRadius = 11.0f;
+}
+
+void HomeDistoAudioProcessorEditor::mouseMove (const juce::MouseEvent& e)
+{
+    auto pos = e.position;
+    FilterHandle newHover = FilterHandle::none;
+    if (pos.getDistanceFrom(lowHandlePos()) < kFilterHandleHitRadius) newHover = FilterHandle::low;
+    else if (pos.getDistanceFrom(highHandlePos()) < kFilterHandleHitRadius) newHover = FilterHandle::high;
+
+    if (newHover != hoveredFilterHandle)
+    {
+        hoveredFilterHandle = newHover;
+        setMouseCursor(newHover == FilterHandle::none ? juce::MouseCursor::NormalCursor
+                                                        : juce::MouseCursor::PointingHandCursor);
+        repaint();
+    }
+}
+
+void HomeDistoAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
+{
+    auto pos = e.position;
+    if (pos.getDistanceFrom(lowHandlePos()) < kFilterHandleHitRadius)
+        draggingFilterHandle = FilterHandle::low;
+    else if (pos.getDistanceFrom(highHandlePos()) < kFilterHandleHitRadius)
+        draggingFilterHandle = FilterHandle::high;
+    else
+        draggingFilterHandle = FilterHandle::none;
+
+    repaint();
+}
+
+void HomeDistoAudioProcessorEditor::mouseDrag (const juce::MouseEvent& e)
+{
+    if (draggingFilterHandle == FilterHandle::none) return;
+
+    float proportion = juce::jlimit(0.0f, 1.0f,
+        (e.position.x - filterGraphLeft) / (filterGraphRight - filterGraphLeft));
+
+    juce::Slider& target = (draggingFilterHandle == FilterHandle::low) ? lowCutSlider : highCutSlider;
+    double newValue = target.proportionOfLengthToValue((double) proportion);
+    target.setValue(newValue, juce::sendNotificationSync);
+
+    repaint();
+}
+
+void HomeDistoAudioProcessorEditor::mouseUp (const juce::MouseEvent&)
+{
+    draggingFilterHandle = FilterHandle::none;
+    repaint();
+}
+
 juce::String HomeDistoAudioProcessorEditor::getFrequencyString(float hz)
 {
     if (hz >= 1000.0f)
@@ -380,45 +448,95 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont(juce::FontOptions(14.0f).withName("Helvetica").withStyle("Bold"));
 
     drawCardText("MODE", 20, 90, 230, 20, juce::Justification::centred);
-    // FIX: back to centred (was left-aligned to squeeze the slope buttons
-    // into the same row) -- the slope buttons now get their own row right
-    // underneath instead.
     drawCardText("FILTER", 20, 271, 230, 18, juce::Justification::centred);
 
-    // FIX: removed the "LOW CUT"/"HIGH CUT" labels earlier, and now also
-    // removing the live Hz readout that was under them -- hovering or
-    // dragging the sliders already shows the exact value in a popup (see
-    // constructor: setPopupDisplayEnabled), so a permanently-drawn number
-    // here was redundant. Freed-up space goes to a slightly taller
-    // slider/graph area below instead.
+    // NEW: shared pill-shaped track behind the slope segmented control --
+    // drawn here (once, in the parent) so all 3 buttons read as one control.
+    // Matches the bounds set in resized().
+    {
+        juce::Rectangle<float> slopeTrack(76.0f, 291.0f, 118.0f, 16.0f);
+        g.setColour(juce::Colours::black.withAlpha(0.35f));
+        g.fillRoundedRectangle(slopeTrack, 3.0f);
+    }
 
-    float lowProp = lowCutSlider.valueToProportionOfLength(lowCutSlider.getValue());
-    float lowX = lowCutSlider.getX() + (lowProp * lowCutSlider.getWidth());
-    float highProp = highCutSlider.valueToProportionOfLength(highCutSlider.getValue());
-    float highX = highCutSlider.getX() + (highProp * highCutSlider.getWidth());
-    float graphY = 345.0f;
+    // REDESIGNED: LOW_CUT/HIGH_CUT are no longer separate sliders below the
+    // graph -- they're draggable handles directly on the curve, EQ-plugin
+    // style, and the graph itself is now much bigger (using the space freed
+    // up by removing the old labels/readouts/sliders).
+    auto lowPt = lowHandlePos();
+    auto highPt = highHandlePos();
 
     g.setColour(juce::Colours::black.withAlpha(0.2f));
-    g.drawLine(35, graphY, 235, graphY, 2.0f); 
+    g.drawLine(filterGraphLeft, filterGraphTopY, filterGraphRight, filterGraphTopY, 2.0f); 
 
-    // NEW: corner sharpness now actually reflects the selected filter
-    // slope instead of being a fixed, meaningless curve. Gentler roll-off
+    // Corner sharpness reflects the selected filter slope: gentler roll-off
     // (12 dB/oct) draws a wide, soft corner; steeper slopes (24/48 dB/oct)
-    // draw a progressively tighter, more abrupt corner -- visually a
-    // steeper wall, matching what the filter is actually doing.
+    // draw a progressively tighter, more abrupt corner.
     int slopeIdx = juce::jlimit(0, 2, (int) audioProcessor.apvts.getRawParameterValue("SLOPE")->load());
-    float cornerOffset = slopeIdx == 0 ? 10.0f : (slopeIdx == 1 ? 5.0f : 1.5f);
+    float cornerOffset = slopeIdx == 0 ? 16.0f : (slopeIdx == 1 ? 8.0f : 2.5f);
 
     juce::Path filterCurve; 
-    filterCurve.startNewSubPath(35, 384);
-    filterCurve.cubicTo(lowX - cornerOffset, 384, lowX - cornerOffset, graphY, lowX, graphY);
-    filterCurve.lineTo(highX, graphY);
-    filterCurve.cubicTo(highX + cornerOffset, graphY, highX + cornerOffset, 384, 235, 384);
+    filterCurve.startNewSubPath(filterGraphLeft, filterGraphBottomY);
+    filterCurve.cubicTo(lowPt.x - cornerOffset, filterGraphBottomY, lowPt.x - cornerOffset, lowPt.y, lowPt.x, lowPt.y);
+    filterCurve.lineTo(highPt.x, highPt.y);
+    filterCurve.cubicTo(highPt.x + cornerOffset, highPt.y, highPt.x + cornerOffset, filterGraphBottomY, filterGraphRight, filterGraphBottomY);
     
     g.setColour(juce::Colours::black.withAlpha(0.4f));
     g.strokePath(filterCurve, juce::PathStrokeType(3.5f), juce::AffineTransform::translation(0, 1.5f));
     g.setColour(juce::Colour(0xFF09090B));
     g.strokePath(filterCurve, juce::PathStrokeType(3.0f)); 
+
+    // Fill under the curve for a proper "EQ scope" look.
+    juce::Path fillPath = filterCurve;
+    fillPath.lineTo(filterGraphRight, filterGraphTopY - 6.0f);
+    fillPath.lineTo(filterGraphLeft, filterGraphTopY - 6.0f);
+    fillPath.closeSubPath();
+    g.setColour(juce::Colour(0xFF00E5FF).withAlpha(0.08f));
+    g.fillPath(fillPath);
+
+    // Draggable handles. Bigger and glowing when hovered/dragged so it's
+    // obvious they're grabbable.
+    auto drawHandle = [&](juce::Point<float> pos, bool active) {
+        float r = active ? 7.0f : 5.5f;
+        if (active)
+        {
+            g.setColour(juce::Colour(0xFF00E5FF).withAlpha(0.35f));
+            g.fillEllipse(pos.x - r - 5.0f, pos.y - r - 5.0f, (r + 5.0f) * 2.0f, (r + 5.0f) * 2.0f);
+        }
+        g.setColour(juce::Colours::black.withAlpha(0.4f));
+        g.fillEllipse(pos.x - r, pos.y - r + 1.5f, r * 2.0f, r * 2.0f);
+        g.setColour(active ? juce::Colour(0xFF00E5FF) : juce::Colours::white);
+        g.fillEllipse(pos.x - r, pos.y - r, r * 2.0f, r * 2.0f);
+        g.setColour(juce::Colour(0xFF09090B));
+        g.drawEllipse(pos.x - r, pos.y - r, r * 2.0f, r * 2.0f, 1.2f);
+    };
+
+    bool lowActive  = (hoveredFilterHandle == FilterHandle::low)  || (draggingFilterHandle == FilterHandle::low);
+    bool highActive = (hoveredFilterHandle == FilterHandle::high) || (draggingFilterHandle == FilterHandle::high);
+    drawHandle(lowPt, lowActive);
+    drawHandle(highPt, highActive);
+
+    // Live value readout only while actively interacting with a handle --
+    // no permanent text clutter otherwise.
+    if (lowActive || highActive)
+    {
+        bool showLow = lowActive;
+        auto pt = showLow ? lowPt : highPt;
+        float hz = showLow ? (float) lowCutSlider.getValue() : (float) highCutSlider.getValue();
+        juce::String text = getFrequencyString(hz);
+
+        g.setFont(juce::FontOptions(11.0f).withName("Helvetica").withStyle("Bold"));
+        float textWidth = juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), text) + 12.0f;
+        juce::Rectangle<float> bubble(pt.x - textWidth * 0.5f, pt.y - 26.0f, textWidth, 16.0f);
+        bubble = bubble.constrainedWithin(juce::Rectangle<float>(filterGraphLeft, 292.0f, filterGraphRight - filterGraphLeft, 100.0f));
+
+        g.setColour(juce::Colour(0xFF161618));
+        g.fillRoundedRectangle(bubble, 3.0f);
+        g.setColour(juce::Colour(0xFF00E5FF).withAlpha(0.5f));
+        g.drawRoundedRectangle(bubble, 3.0f, 1.0f);
+        g.setColour(juce::Colours::white);
+        g.drawText(text, bubble, juce::Justification::centred);
+    }
 
     g.setFont(juce::FontOptions(14.0f).withName("Helvetica").withStyle("Bold"));
     drawCardText("DRIVE", 260, 90, 260, 20, juce::Justification::centred); 
@@ -478,11 +596,13 @@ void HomeDistoAudioProcessorEditor::resized()
         modeButtons[i].setBounds(35 + (col * 105), 115 + (row * 44), 95, 32);
     }
 
-    lowCutSlider.setBounds(30, 312, 90, 30);  
-    highCutSlider.setBounds(150, 312, 90, 30); 
+    // NOTE: lowCutSlider/highCutSlider no longer need bounds set -- they're
+    // invisible data-model-only components now (see constructor). Their
+    // value<->proportion mapping doesn't depend on their on-screen size.
 
     // NEW: slope buttons now get their own centred row directly under the
-    // FILTER title, instead of squeezed into the title row.
+    // FILTER title, instead of squeezed into the title row. Bounds must
+    // match the slopeTrack rectangle drawn in paint().
     for (int i = 0; i < 3; ++i)
         slopeButtons[i].setBounds(76 + i * 42, 291, 34, 16);
 

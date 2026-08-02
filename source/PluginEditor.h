@@ -104,6 +104,22 @@ public:
     {
         auto bounds = button.getLocalBounds().toFloat();
 
+        if (button.getName() == "SLOPE_BTN")
+        {
+            // FIX: was three separate boxed TextButtons (the "don't like how
+            // they look" complaint) -- now a proper segmented-control style.
+            // The shared pill-shaped track is drawn once in the editor's
+            // paint() behind all three; each button only draws its own
+            // active-state highlight on top of that shared track, so they
+            // read as one control instead of three disconnected boxes.
+            if (button.getToggleState())
+            {
+                g.setColour(juce::Colour(0xFF00E5FF));
+                g.fillRoundedRectangle(bounds.reduced(1.5f), 3.0f);
+            }
+            return;
+        }
+
         if (button.getName() == "LOCK")
         {
             bool locked = button.getToggleState();
@@ -206,6 +222,14 @@ public:
     void drawButtonText (juce::Graphics& g, juce::TextButton& button, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
     {
         if (button.getName() == "SAVE" || button.getName() == "SETTINGS" || button.getName() == "BYPASS" || button.getName() == "LOCK") return;
+
+        if (button.getName() == "SLOPE_BTN")
+        {
+            g.setFont(juce::FontOptions(11.0f).withName("Helvetica").withStyle("Bold"));
+            g.setColour(button.getToggleState() ? juce::Colour(0xFF09090B) : juce::Colours::white.withAlpha(0.5f));
+            g.drawText(button.getButtonText(), button.getLocalBounds(), juce::Justification::centred);
+            return;
+        }
         
         // --- NEW FIX: Check button name instead of Unicode text ---
         if (button.getName() == "PRESET_UP" || button.getName() == "PRESET_DOWN")
@@ -276,6 +300,14 @@ public:
     void resized() override;
     void parameterChanged (const juce::String& parameterID, float newValue) override;
 
+    // NEW: LOW_CUT/HIGH_CUT are now draggable handles directly on the
+    // filter curve itself (like an EQ plugin) rather than separate sliders
+    // below it -- these drive that.
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+
 private:
     HomeDistoAudioProcessor& audioProcessor;
     MinimalistSynthLookAndFeel synthLaf;
@@ -308,12 +340,28 @@ private:
     juce::TextButton modeButtons[6];
     juce::StringArray modeNames = { "PUNCH", "TUBE", "TAPE", "DIGITAL", "CRUNCH", "FUZZ" };
     
+    // NEW: LOW_CUT/HIGH_CUT sliders still exist as the actual data model
+    // (APVTS attachment lives here) but are invisible now -- the filter
+    // curve graphic itself is the control surface, EQ-plugin style. See
+    // mouseDown/mouseDrag and lowHandlePos()/highHandlePos() below.
     juce::Slider lowCutSlider;
     juce::Slider highCutSlider;
 
-    // NEW: filter slope, right in the Filter card next to LOW CUT/HIGH CUT
-    // -- this is a control people want quick access to while dialing in the
-    // focus band, not a buried setting.
+    // Shared geometry for the interactive filter graph, so painting and
+    // hit-testing can never disagree with each other.
+    static constexpr float filterGraphLeft = 35.0f;
+    static constexpr float filterGraphRight = 235.0f;
+    static constexpr float filterGraphTopY = 320.0f;    // "pass" level (flat top)
+    static constexpr float filterGraphBottomY = 384.0f; // "cut" level (baseline)
+    juce::Point<float> lowHandlePos() const;
+    juce::Point<float> highHandlePos() const;
+
+    enum class FilterHandle { none, low, high };
+    FilterHandle draggingFilterHandle = FilterHandle::none;
+    FilterHandle hoveredFilterHandle = FilterHandle::none;
+
+    // NEW: filter slope, styled as a single segmented control rather than
+    // three separate boxes.
     juce::TextButton slopeButtons[3];
     juce::StringArray slopeButtonLabels = { "12", "24", "48" };
 
