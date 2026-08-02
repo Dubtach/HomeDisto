@@ -353,8 +353,8 @@ private:
     static constexpr float filterGraphRight = 235.0f;
     static constexpr float filterGraphTopY = 320.0f;    // "pass" level (flat top)
     static constexpr float filterGraphBottomY = 384.0f; // "cut" level (baseline)
-    juce::Point<float> lowHandlePos() const;
-    juce::Point<float> highHandlePos() const;
+    juce::Point<float> lowHandlePos();
+    juce::Point<float> highHandlePos();
 
     enum class FilterHandle { none, low, high };
     FilterHandle draggingFilterHandle = FilterHandle::none;

@@ -316,13 +316,13 @@ void HomeDistoAudioProcessorEditor::parameterChanged (const juce::String& parame
     }
 }
 
-juce::Point<float> HomeDistoAudioProcessorEditor::lowHandlePos() const
+juce::Point<float> HomeDistoAudioProcessorEditor::lowHandlePos()
 {
     float prop = (float) lowCutSlider.valueToProportionOfLength(lowCutSlider.getValue());
     return { filterGraphLeft + prop * (filterGraphRight - filterGraphLeft), filterGraphTopY };
 }
 
-juce::Point<float> HomeDistoAudioProcessorEditor::highHandlePos() const
+juce::Point<float> HomeDistoAudioProcessorEditor::highHandlePos()
 {
     float prop = (float) highCutSlider.valueToProportionOfLength(highCutSlider.getValue());
     return { filterGraphLeft + prop * (filterGraphRight - filterGraphLeft), filterGraphTopY };
