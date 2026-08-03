@@ -64,37 +64,34 @@ private:
     // is bypassed/enabled. Always-on, fixed ~15 Hz, not user-controllable.
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> dcBlockerFilter;
 
-    // NEW: adjustable filter slope. LOW_CUT/HIGH_CUT used to be fixed at a
-    // single 2-pole (12 dB/oct) stage each. SLOPE now picks how many
-    // identical stages get cascaded (1/2/4 => 12/24/48 dB/oct), which is the
-    // standard way to get steeper slopes out of a biquad. All stages in an
-    // array share ONE Coefficients object (set via stage 0's .state, which
-    // is the same underlying object every other stage in the array points
-    // at) -- so updating the cutoff is still just one call, not four; only
-    // the *number of stages actually processed* changes with SLOPE.
+    // REDESIGNED: this used to be a 2-knob "focus band" filter that used a
+    // subtraction trick (isolate a band, distort only that, sum the
+    // untouched rest back in). That trick only works with pure cut filters.
+    // Now that LOW/HIGH can be shelves too, and there are 2 bell/peak bands,
+    // there's no clean "everything else" to recover via subtraction anymore
+    // (shelves/bells change gain rather than fully removing content). This
+    // is now a standard 4-band EQ that shapes tone BEFORE the distortion
+    // stage -- the same signal-chain design virtually every amp-sim/
+    // distortion plugin uses. MIX is back to a plain dry/fully-processed
+    // blend (see processBlock).
+    //
+    // Band 1 (LOW):  cut (cascaded highpass, slope-controlled) or shelf
+    // Band 2 (BELL1): parametric peak/bell
+    // Band 3 (BELL2): parametric peak/bell
+    // Band 4 (HIGH): cut (cascaded lowpass, slope-controlled) or shelf
     static constexpr int kMaxFilterStages = 4;
     std::array<juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>>, kMaxFilterStages> lowCutStages;
     std::array<juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>>, kMaxFilterStages> highCutStages;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> lowShelfFilter;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> highShelfFilter;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> bell1Filter;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> bell2Filter;
     int lastSlopeStageCount = 1;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> toneFilter;
 
-    // NEW: post-distortion "de-fizz" filter. LOW_CUT/HIGH_CUT only shape what
-    // goes INTO the waveshaper -- they do nothing about the harsh upper
-    // harmonics the waveshaper itself generates. This runs after the
-    // distortion stage (wet path only) and is controlled by the SMOOTH
-    // parameter, exposed in the settings popup.
+    // NEW: post-distortion "de-fizz" filter. This runs after the distortion
+    // stage and is controlled by the SMOOTH parameter in the settings popup.
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> smoothFilter;
-    
-    // REDESIGNED: LOW_CUT/HIGH_CUT used to filter the ENTIRE signal (both
-    // wet and a phase-matched "dry" copy), which meant content outside the
-    // band wasn't just "left undistorted" -- it was filtered out of the
-    // output altogether, on both paths. That's a normal EQ, not a focus
-    // control. Now LOW_CUT/HIGH_CUT only carve out the band that gets fed
-    // to the distortion; everything outside that band is recovered by
-    // subtraction (dry - band) and passed through completely untouched --
-    // no filtering, no distortion, phase-exact by construction. See
-    // processBlock() for the full explanation.
-    juce::AudioBuffer<float> outOfBandBuffer;
     
     juce::AudioBuffer<float> dryBuffer;
 
@@ -105,15 +102,14 @@ private:
     juce::SmoothedValue<float> smoothPunch;
     juce::SmoothedValue<float> autoGainFactor;
 
-    // NEW: filter-cutoff smoothing. LOW_CUT/HIGH_CUT/TONE/SMOOTH previously
-    // recalculated their IIR coefficients every block straight from the raw,
-    // un-smoothed parameter value -- a fast knob sweep or automation ramp
-    // could jump the cutoff enough in one block to click. These are simple
-    // one-pole smoothers on the *parameter values themselves*, updated once
-    // per block (filter coefficients are already only recomputed once per
-    // block, not per-sample, so this is smoothed at the right rate).
-    float smoothedLowCutHz = 20.0f;
-    float smoothedHighCutHz = 20000.0f;
+    // NEW: block-rate one-pole smoothing for every EQ band's freq/gain/Q --
+    // same reasoning as before (a fast drag/automation ramp could otherwise
+    // jump a cutoff/gain enough in one block to click), just extended to
+    // cover the new bands.
+    float smoothedLowFreqHz = 80.0f, smoothedLowGainDb = 0.0f;
+    float smoothedBell1FreqHz = 400.0f, smoothedBell1GainDb = 0.0f, smoothedBell1Q = 0.8f;
+    float smoothedBell2FreqHz = 2500.0f, smoothedBell2GainDb = 0.0f, smoothedBell2Q = 0.8f;
+    float smoothedHighFreqHz = 8000.0f, smoothedHighGainDb = 0.0f;
     float smoothedToneDb = 0.0f;
     float smoothedDeFizzHz = 20000.0f;
     static float onePoleApproach(float current, float target, float coeff) noexcept
@@ -149,6 +145,11 @@ private:
     void updateHighPass(juce::dsp::IIR::Coefficients<float>* state, float freq, double sampleRate);
     void updateLowPass(juce::dsp::IIR::Coefficients<float>* state, float freq, double sampleRate);
     void updateHighShelf(juce::dsp::IIR::Coefficients<float>* state, float freq, float Q, float gain, double sampleRate);
+    // NEW: low-shelf (for EQ_LOW in shelf mode) and peak/bell (for the two
+    // BELL bands) -- same RBJ-cookbook-derived, 5-element-array-correct
+    // approach as the other update* functions above.
+    void updateLowShelf(juce::dsp::IIR::Coefficients<float>* state, float freq, float Q, float gain, double sampleRate);
+    void updatePeak(juce::dsp::IIR::Coefficients<float>* state, float freq, float Q, float gain, double sampleRate);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HomeDistoAudioProcessor)
 };

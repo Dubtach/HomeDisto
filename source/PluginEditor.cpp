@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <cmath>
 
 // NEW: settings popup content. Owned by the CallOutBox that shows it (see
 // showSettingsMenu below), so its parameter attachments just need to live as
@@ -224,20 +225,35 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     int initialMode = (int)audioProcessor.apvts.getRawParameterValue("MODE")->load();
     modeButtons[initialMode].setToggleState(true, juce::dontSendNotification);
 
-    // NEW: LOW_CUT/HIGH_CUT are still real Sliders (so the APVTS attachment
-    // machinery works unchanged) but are no longer shown or directly
-    // interactive -- the filter curve graphic itself is now the control
-    // surface (see mouseDown/mouseDrag/lowHandlePos/highHandlePos). Setting
-    // them invisible also removes them from hit-testing entirely, so clicks
-    // in the graph area correctly fall through to this component's own
-    // mouse handlers instead of being swallowed by a slider underneath.
-    addChildComponent(lowCutSlider); // added but not shown
-    lowAttach = std::make_unique<SliderAttachment>(audioProcessor.apvts, "LOW_CUT", lowCutSlider);
-    lowCutSlider.onValueChange = [this] { repaint(); };
+    // REDESIGNED: now 8 sliders (freq/gain for LOW, BELL1, BELL2, HIGH; Q
+    // for the bells is wheel-controlled, see mouseWheelMove) instead of 2.
+    // All still real Sliders purely as the APVTS-attached data model --
+    // invisible, never shown; the EQ graph itself is the control surface.
+    // Invisible components are excluded from hit-testing entirely, so
+    // clicks in the graph area correctly fall through to this component's
+    // own mouse handlers instead of being swallowed by a slider underneath.
+    auto wireEqSlider = [this](juce::Slider& slider, const juce::String& paramID, std::unique_ptr<SliderAttachment>& attach) {
+        addChildComponent(slider); // added but not shown
+        attach = std::make_unique<SliderAttachment>(audioProcessor.apvts, paramID, slider);
+        slider.onValueChange = [this] { repaint(); };
+    };
 
-    addChildComponent(highCutSlider);
-    highAttach = std::make_unique<SliderAttachment>(audioProcessor.apvts, "HIGH_CUT", highCutSlider);
-    highCutSlider.onValueChange = [this] { repaint(); };
+    wireEqSlider(lowFreqSlider,  "EQ_LOW_FREQ",  lowFreqAttach);
+    wireEqSlider(lowGainSlider,  "EQ_LOW_GAIN",  lowGainAttach);
+    wireEqSlider(bell1FreqSlider, "EQ_BELL1_FREQ", bell1FreqAttach);
+    wireEqSlider(bell1GainSlider, "EQ_BELL1_GAIN", bell1GainAttach);
+    wireEqSlider(bell1QSlider,    "EQ_BELL1_Q",    bell1QAttach);
+    wireEqSlider(bell2FreqSlider, "EQ_BELL2_FREQ", bell2FreqAttach);
+    wireEqSlider(bell2GainSlider, "EQ_BELL2_GAIN", bell2GainAttach);
+    wireEqSlider(bell2QSlider,    "EQ_BELL2_Q",    bell2QAttach);
+    wireEqSlider(highFreqSlider, "EQ_HIGH_FREQ", highFreqAttach);
+    wireEqSlider(highGainSlider, "EQ_HIGH_GAIN", highGainAttach);
+
+    // EQ_LOW_TYPE/EQ_HIGH_TYPE (Cut vs Shelf) aren't sliders -- they're
+    // toggled by clicking (not dragging) the LOW/HIGH node; see mouseUp.
+    // Repaint whenever they change via automation/preset load too.
+    audioProcessor.apvts.addParameterListener("EQ_LOW_TYPE", this);
+    audioProcessor.apvts.addParameterListener("EQ_HIGH_TYPE", this);
 
     // NEW: filter slope buttons (12/24/48 dB/oct) styled as a single
     // segmented control (see SLOPE_BTN handling in the LookAndFeel) rather
@@ -265,6 +281,8 @@ HomeDistoAudioProcessorEditor::~HomeDistoAudioProcessorEditor()
 {
     audioProcessor.apvts.removeParameterListener("MODE", this);
     audioProcessor.apvts.removeParameterListener("SLOPE", this);
+    audioProcessor.apvts.removeParameterListener("EQ_LOW_TYPE", this);
+    audioProcessor.apvts.removeParameterListener("EQ_HIGH_TYPE", this);
     setLookAndFeel(nullptr); 
 }
 
@@ -314,18 +332,76 @@ void HomeDistoAudioProcessorEditor::parameterChanged (const juce::String& parame
             repaint(); // visual curve steepness depends on slope
         });
     }
+    else if (parameterID == "EQ_LOW_TYPE" || parameterID == "EQ_HIGH_TYPE")
+    {
+        juce::MessageManager::callAsync([this]() { repaint(); });
+    }
+}
+
+// --- Shared freq/gain <-> pixel mapping for the EQ graph -------------------
+// X uses a single shared log-frequency axis (20 Hz-20 kHz) for ALL bands,
+// rather than each parameter's own (differently-skewed) NormalisableRange --
+// otherwise e.g. a bell centered at 1 kHz and the low band's corner at 1 kHz
+// would render at different X positions even though they're the same
+// frequency. Y is +/-18 dB gain.
+float HomeDistoAudioProcessorEditor::freqToX(float hz) const
+{
+    float logMin = std::log10(20.0f), logMax = std::log10(20000.0f);
+    float logHz = std::log10(juce::jlimit(20.0f, 20000.0f, hz));
+    float prop = (logHz - logMin) / (logMax - logMin);
+    return filterGraphLeft + prop * (filterGraphRight - filterGraphLeft);
+}
+
+float HomeDistoAudioProcessorEditor::xToFreq(float x) const
+{
+    float prop = juce::jlimit(0.0f, 1.0f, (x - filterGraphLeft) / (filterGraphRight - filterGraphLeft));
+    float logMin = std::log10(20.0f), logMax = std::log10(20000.0f);
+    return std::pow(10.0f, logMin + prop * (logMax - logMin));
+}
+
+float HomeDistoAudioProcessorEditor::gainToY(float db) const
+{
+    float prop = (juce::jlimit(-18.0f, 18.0f, db) + 18.0f) / 36.0f;
+    return filterGraphBottomY - prop * (filterGraphBottomY - filterGraphTopY);
+}
+
+float HomeDistoAudioProcessorEditor::yToGain(float y) const
+{
+    float prop = juce::jlimit(0.0f, 1.0f, (filterGraphBottomY - y) / (filterGraphBottomY - filterGraphTopY));
+    return prop * 36.0f - 18.0f;
 }
 
 juce::Point<float> HomeDistoAudioProcessorEditor::lowHandlePos()
 {
-    float prop = (float) lowCutSlider.valueToProportionOfLength(lowCutSlider.getValue());
-    return { filterGraphLeft + prop * (filterGraphRight - filterGraphLeft), filterGraphTopY };
+    int type = (int) audioProcessor.apvts.getRawParameterValue("EQ_LOW_TYPE")->load();
+    float gainDb = (type == 0) ? 0.0f : (float) lowGainSlider.getValue(); // Cut = 0 dB node (dive drawn separately)
+    return { freqToX((float) lowFreqSlider.getValue()), gainToY(gainDb) };
 }
 
 juce::Point<float> HomeDistoAudioProcessorEditor::highHandlePos()
 {
-    float prop = (float) highCutSlider.valueToProportionOfLength(highCutSlider.getValue());
-    return { filterGraphLeft + prop * (filterGraphRight - filterGraphLeft), filterGraphTopY };
+    int type = (int) audioProcessor.apvts.getRawParameterValue("EQ_HIGH_TYPE")->load();
+    float gainDb = (type == 0) ? 0.0f : (float) highGainSlider.getValue();
+    return { freqToX((float) highFreqSlider.getValue()), gainToY(gainDb) };
+}
+
+juce::Point<float> HomeDistoAudioProcessorEditor::bell1HandlePos()
+{
+    return { freqToX((float) bell1FreqSlider.getValue()), gainToY((float) bell1GainSlider.getValue()) };
+}
+
+juce::Point<float> HomeDistoAudioProcessorEditor::bell2HandlePos()
+{
+    return { freqToX((float) bell2FreqSlider.getValue()), gainToY((float) bell2GainSlider.getValue()) };
+}
+
+void HomeDistoAudioProcessorEditor::toggleBandType(const juce::String& typeParamID)
+{
+    auto* p = audioProcessor.apvts.getParameter(typeParamID);
+    if (p == nullptr) return;
+    int current = (int) audioProcessor.apvts.getRawParameterValue(typeParamID)->load();
+    int next = 1 - current; // 2 choices (Cut/Shelf) -- normalized value == index for a 2-choice param
+    p->setValueNotifyingHost((float) next);
 }
 
 namespace
@@ -337,8 +413,10 @@ void HomeDistoAudioProcessorEditor::mouseMove (const juce::MouseEvent& e)
 {
     auto pos = e.position;
     FilterHandle newHover = FilterHandle::none;
-    if (pos.getDistanceFrom(lowHandlePos()) < kFilterHandleHitRadius) newHover = FilterHandle::low;
-    else if (pos.getDistanceFrom(highHandlePos()) < kFilterHandleHitRadius) newHover = FilterHandle::high;
+    if      (pos.getDistanceFrom(lowHandlePos())   < kFilterHandleHitRadius) newHover = FilterHandle::low;
+    else if (pos.getDistanceFrom(bell1HandlePos()) < kFilterHandleHitRadius) newHover = FilterHandle::bell1;
+    else if (pos.getDistanceFrom(bell2HandlePos()) < kFilterHandleHitRadius) newHover = FilterHandle::bell2;
+    else if (pos.getDistanceFrom(highHandlePos())  < kFilterHandleHitRadius) newHover = FilterHandle::high;
 
     if (newHover != hoveredFilterHandle)
     {
@@ -352,12 +430,11 @@ void HomeDistoAudioProcessorEditor::mouseMove (const juce::MouseEvent& e)
 void HomeDistoAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
 {
     auto pos = e.position;
-    if (pos.getDistanceFrom(lowHandlePos()) < kFilterHandleHitRadius)
-        draggingFilterHandle = FilterHandle::low;
-    else if (pos.getDistanceFrom(highHandlePos()) < kFilterHandleHitRadius)
-        draggingFilterHandle = FilterHandle::high;
-    else
-        draggingFilterHandle = FilterHandle::none;
+    if      (pos.getDistanceFrom(lowHandlePos())   < kFilterHandleHitRadius) draggingFilterHandle = FilterHandle::low;
+    else if (pos.getDistanceFrom(bell1HandlePos()) < kFilterHandleHitRadius) draggingFilterHandle = FilterHandle::bell1;
+    else if (pos.getDistanceFrom(bell2HandlePos()) < kFilterHandleHitRadius) draggingFilterHandle = FilterHandle::bell2;
+    else if (pos.getDistanceFrom(highHandlePos())  < kFilterHandleHitRadius) draggingFilterHandle = FilterHandle::high;
+    else draggingFilterHandle = FilterHandle::none;
 
     repaint();
 }
@@ -366,20 +443,77 @@ void HomeDistoAudioProcessorEditor::mouseDrag (const juce::MouseEvent& e)
 {
     if (draggingFilterHandle == FilterHandle::none) return;
 
-    float proportion = juce::jlimit(0.0f, 1.0f,
-        (e.position.x - filterGraphLeft) / (filterGraphRight - filterGraphLeft));
+    float newFreq = xToFreq(e.position.x);
+    float newGain = yToGain(e.position.y);
 
-    juce::Slider& target = (draggingFilterHandle == FilterHandle::low) ? lowCutSlider : highCutSlider;
-    double newValue = target.proportionOfLengthToValue((double) proportion);
-    target.setValue(newValue, juce::sendNotificationSync);
+    // FIX: LOW/HIGH could previously be dragged past each other. Clamp each
+    // against the other's current frequency (ratio-based, matching the
+    // defensive clamp on the DSP side) so they can't cross.
+    constexpr float minRatio = 1.05f;
+
+    switch (draggingFilterHandle)
+    {
+        case FilterHandle::low:
+        {
+            float highNow = (float) highFreqSlider.getValue();
+            newFreq = juce::jmin(newFreq, highNow / minRatio);
+            lowFreqSlider.setValue(newFreq, juce::sendNotificationSync);
+            int type = (int) audioProcessor.apvts.getRawParameterValue("EQ_LOW_TYPE")->load();
+            if (type == 1) lowGainSlider.setValue(newGain, juce::sendNotificationSync); // Shelf: Y = gain
+            break;
+        }
+        case FilterHandle::high:
+        {
+            float lowNow = (float) lowFreqSlider.getValue();
+            newFreq = juce::jmax(newFreq, lowNow * minRatio);
+            highFreqSlider.setValue(newFreq, juce::sendNotificationSync);
+            int type = (int) audioProcessor.apvts.getRawParameterValue("EQ_HIGH_TYPE")->load();
+            if (type == 1) highGainSlider.setValue(newGain, juce::sendNotificationSync);
+            break;
+        }
+        case FilterHandle::bell1:
+            bell1FreqSlider.setValue(newFreq, juce::sendNotificationSync);
+            bell1GainSlider.setValue(newGain, juce::sendNotificationSync);
+            break;
+        case FilterHandle::bell2:
+            bell2FreqSlider.setValue(newFreq, juce::sendNotificationSync);
+            bell2GainSlider.setValue(newGain, juce::sendNotificationSync);
+            break;
+        default: break;
+    }
 
     repaint();
 }
 
-void HomeDistoAudioProcessorEditor::mouseUp (const juce::MouseEvent&)
+void HomeDistoAudioProcessorEditor::mouseUp (const juce::MouseEvent& e)
 {
+    // NEW: clicking (not dragging) the LOW or HIGH node toggles it between
+    // Cut and Shelf -- keeps the graph uncluttered with extra buttons.
+    bool wasClick = e.getDistanceFromDragStart() < 4;
+    if (wasClick && draggingFilterHandle == FilterHandle::low)
+        toggleBandType("EQ_LOW_TYPE");
+    else if (wasClick && draggingFilterHandle == FilterHandle::high)
+        toggleBandType("EQ_HIGH_TYPE");
+
     draggingFilterHandle = FilterHandle::none;
     repaint();
+}
+
+void HomeDistoAudioProcessorEditor::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
+{
+    auto pos = e.position;
+    juce::Slider* qSlider = nullptr;
+
+    if (pos.getDistanceFrom(bell1HandlePos()) < kFilterHandleHitRadius) qSlider = &bell1QSlider;
+    else if (pos.getDistanceFrom(bell2HandlePos()) < kFilterHandleHitRadius) qSlider = &bell2QSlider;
+
+    if (qSlider != nullptr)
+    {
+        float q = (float) qSlider->getValue();
+        q = juce::jlimit(0.2f, 8.0f, q + wheel.deltaY * 2.0f);
+        qSlider->setValue(q, juce::sendNotificationSync);
+        repaint();
+    }
 }
 
 juce::String HomeDistoAudioProcessorEditor::getFrequencyString(float hz)
@@ -448,7 +582,9 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont(juce::FontOptions(14.0f).withName("Helvetica").withStyle("Bold"));
 
     drawCardText("MODE", 20, 90, 230, 20, juce::Justification::centred);
-    drawCardText("FILTER", 20, 271, 230, 18, juce::Justification::centred);
+    // FIX: renamed from FILTER -- this is a real 4-band EQ now (Low
+    // Cut/Shelf, 2 Bell bands, High Cut/Shelf), not just a filter.
+    drawCardText("EQ", 20, 271, 230, 18, juce::Justification::centred);
 
     // NEW: shared pill-shaped track behind the slope segmented control --
     // drawn here (once, in the parent) so all 3 buttons read as one control.
@@ -459,80 +595,131 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
         g.fillRoundedRectangle(slopeTrack, 3.0f);
     }
 
-    // REDESIGNED: LOW_CUT/HIGH_CUT are no longer separate sliders below the
-    // graph -- they're draggable handles directly on the curve, EQ-plugin
-    // style, and the graph itself is now much bigger (using the space freed
-    // up by removing the old labels/readouts/sliders).
-    auto lowPt = lowHandlePos();
-    auto highPt = highHandlePos();
+    // REDESIGNED: 4 draggable nodes now (was 2) -- LOW, BELL1, BELL2, HIGH.
+    // Click (no drag) a LOW/HIGH node to toggle Cut<->Shelf; drag to move
+    // it. Bell nodes always drag freely in freq+gain; scroll wheel over one
+    // adjusts its Q.
+    auto lowPt   = lowHandlePos();
+    auto bell1Pt = bell1HandlePos();
+    auto bell2Pt = bell2HandlePos();
+    auto highPt  = highHandlePos();
+    int lowType  = (int) audioProcessor.apvts.getRawParameterValue("EQ_LOW_TYPE")->load();
+    int highType = (int) audioProcessor.apvts.getRawParameterValue("EQ_HIGH_TYPE")->load();
 
+    // 0 dB reference line.
     g.setColour(juce::Colours::black.withAlpha(0.2f));
-    g.drawLine(filterGraphLeft, filterGraphTopY, filterGraphRight, filterGraphTopY, 2.0f); 
+    g.drawLine(filterGraphLeft, filterGraphMidY, filterGraphRight, filterGraphMidY, 1.5f);
 
-    // Corner sharpness reflects the selected filter slope: gentler roll-off
-    // (12 dB/oct) draws a wide, soft corner; steeper slopes (24/48 dB/oct)
-    // draw a progressively tighter, more abrupt corner.
+    // Corner sharpness for CUT-mode bands reflects the selected filter
+    // slope: gentler roll-off (12 dB/oct) draws a wide, soft dive to the
+    // floor; steeper slopes (24/48 dB/oct) draw a progressively tighter one.
     int slopeIdx = juce::jlimit(0, 2, (int) audioProcessor.apvts.getRawParameterValue("SLOPE")->load());
     float cornerOffset = slopeIdx == 0 ? 16.0f : (slopeIdx == 1 ? 8.0f : 2.5f);
 
-    juce::Path filterCurve; 
-    filterCurve.startNewSubPath(filterGraphLeft, filterGraphBottomY);
-    filterCurve.cubicTo(lowPt.x - cornerOffset, filterGraphBottomY, lowPt.x - cornerOffset, lowPt.y, lowPt.x, lowPt.y);
-    filterCurve.lineTo(highPt.x, highPt.y);
-    filterCurve.cubicTo(highPt.x + cornerOffset, highPt.y, highPt.x + cornerOffset, filterGraphBottomY, filterGraphRight, filterGraphBottomY);
-    
-    g.setColour(juce::Colours::black.withAlpha(0.4f));
-    g.strokePath(filterCurve, juce::PathStrokeType(3.5f), juce::AffineTransform::translation(0, 1.5f));
-    g.setColour(juce::Colour(0xFF09090B));
-    g.strokePath(filterCurve, juce::PathStrokeType(3.0f)); 
+    juce::Path eqCurve;
 
-    // Fill under the curve for a proper "EQ scope" look.
-    juce::Path fillPath = filterCurve;
-    fillPath.lineTo(filterGraphRight, filterGraphTopY - 6.0f);
-    fillPath.lineTo(filterGraphLeft, filterGraphTopY - 6.0f);
+    if (lowType == 0) // Cut: dive to the floor left of the node
+    {
+        eqCurve.startNewSubPath(filterGraphLeft, filterGraphBottomY);
+        eqCurve.cubicTo(lowPt.x - cornerOffset, filterGraphBottomY, lowPt.x - cornerOffset, lowPt.y, lowPt.x, lowPt.y);
+    }
+    else // Shelf: approach the node's gain level smoothly
+    {
+        eqCurve.startNewSubPath(filterGraphLeft, lowPt.y);
+        eqCurve.lineTo(lowPt.x, lowPt.y);
+    }
+
+    eqCurve.cubicTo((lowPt.x + bell1Pt.x) * 0.5f, lowPt.y, (lowPt.x + bell1Pt.x) * 0.5f, bell1Pt.y, bell1Pt.x, bell1Pt.y);
+    eqCurve.cubicTo((bell1Pt.x + bell2Pt.x) * 0.5f, bell1Pt.y, (bell1Pt.x + bell2Pt.x) * 0.5f, bell2Pt.y, bell2Pt.x, bell2Pt.y);
+    eqCurve.cubicTo((bell2Pt.x + highPt.x) * 0.5f, bell2Pt.y, (bell2Pt.x + highPt.x) * 0.5f, highPt.y, highPt.x, highPt.y);
+
+    if (highType == 0) // Cut: dive to the floor right of the node
+        eqCurve.cubicTo(highPt.x + cornerOffset, highPt.y, highPt.x + cornerOffset, filterGraphBottomY, filterGraphRight, filterGraphBottomY);
+    else // Shelf
+        eqCurve.lineTo(filterGraphRight, highPt.y);
+
+    g.setColour(juce::Colours::black.withAlpha(0.4f));
+    g.strokePath(eqCurve, juce::PathStrokeType(3.5f), juce::AffineTransform::translation(0, 1.5f));
+    g.setColour(juce::Colour(0xFF09090B));
+    g.strokePath(eqCurve, juce::PathStrokeType(3.0f)); 
+
+    // Fill under the curve for a proper "EQ scope" look. FIX: colour
+    // matches the EQ card's own green accent instead of a mismatched cyan.
+    juce::Path fillPath = eqCurve;
+    fillPath.lineTo(filterGraphRight, filterGraphBottomY);
+    fillPath.lineTo(filterGraphLeft, filterGraphBottomY);
     fillPath.closeSubPath();
-    g.setColour(juce::Colour(0xFF00E5FF).withAlpha(0.08f));
+    g.setColour(juce::Colour(0xFF00FF87).withAlpha(0.07f));
     g.fillPath(fillPath);
 
     // Draggable handles. Bigger and glowing when hovered/dragged so it's
-    // obvious they're grabbable.
+    // obvious they're grabbable. FIX: colour now matches the EQ card's own
+    // green accent (was a mismatched cyan borrowed from a different card).
     auto drawHandle = [&](juce::Point<float> pos, bool active) {
         float r = active ? 7.0f : 5.5f;
         if (active)
         {
-            g.setColour(juce::Colour(0xFF00E5FF).withAlpha(0.35f));
+            g.setColour(juce::Colour(0xFF00FF87).withAlpha(0.35f));
             g.fillEllipse(pos.x - r - 5.0f, pos.y - r - 5.0f, (r + 5.0f) * 2.0f, (r + 5.0f) * 2.0f);
         }
         g.setColour(juce::Colours::black.withAlpha(0.4f));
         g.fillEllipse(pos.x - r, pos.y - r + 1.5f, r * 2.0f, r * 2.0f);
-        g.setColour(active ? juce::Colour(0xFF00E5FF) : juce::Colours::white);
+        g.setColour(active ? juce::Colour(0xFF00FF87) : juce::Colours::white);
         g.fillEllipse(pos.x - r, pos.y - r, r * 2.0f, r * 2.0f);
         g.setColour(juce::Colour(0xFF09090B));
         g.drawEllipse(pos.x - r, pos.y - r, r * 2.0f, r * 2.0f, 1.2f);
     };
 
-    bool lowActive  = (hoveredFilterHandle == FilterHandle::low)  || (draggingFilterHandle == FilterHandle::low);
-    bool highActive = (hoveredFilterHandle == FilterHandle::high) || (draggingFilterHandle == FilterHandle::high);
+    bool lowActive   = (hoveredFilterHandle == FilterHandle::low)   || (draggingFilterHandle == FilterHandle::low);
+    bool bell1Active = (hoveredFilterHandle == FilterHandle::bell1) || (draggingFilterHandle == FilterHandle::bell1);
+    bool bell2Active = (hoveredFilterHandle == FilterHandle::bell2) || (draggingFilterHandle == FilterHandle::bell2);
+    bool highActive  = (hoveredFilterHandle == FilterHandle::high)  || (draggingFilterHandle == FilterHandle::high);
     drawHandle(lowPt, lowActive);
+    drawHandle(bell1Pt, bell1Active);
+    drawHandle(bell2Pt, bell2Active);
     drawHandle(highPt, highActive);
 
     // Live value readout only while actively interacting with a handle --
     // no permanent text clutter otherwise.
-    if (lowActive || highActive)
+    FilterHandle shownHandle = hoveredFilterHandle != FilterHandle::none ? hoveredFilterHandle : draggingFilterHandle;
+    if (shownHandle != FilterHandle::none)
     {
-        bool showLow = lowActive;
-        auto pt = showLow ? lowPt : highPt;
-        float hz = showLow ? (float) lowCutSlider.getValue() : (float) highCutSlider.getValue();
-        juce::String text = getFrequencyString(hz);
+        juce::Point<float> pt;
+        juce::String text;
+
+        if (shownHandle == FilterHandle::low)
+        {
+            pt = lowPt;
+            text = getFrequencyString((float) lowFreqSlider.getValue());
+            if (lowType == 1) text += " / " + juce::String((float) lowGainSlider.getValue(), 1) + " dB";
+            else text += " (Cut)";
+        }
+        else if (shownHandle == FilterHandle::high)
+        {
+            pt = highPt;
+            text = getFrequencyString((float) highFreqSlider.getValue());
+            if (highType == 1) text += " / " + juce::String((float) highGainSlider.getValue(), 1) + " dB";
+            else text += " (Cut)";
+        }
+        else if (shownHandle == FilterHandle::bell1)
+        {
+            pt = bell1Pt;
+            text = getFrequencyString((float) bell1FreqSlider.getValue()) + " / " + juce::String((float) bell1GainSlider.getValue(), 1) + " dB";
+        }
+        else
+        {
+            pt = bell2Pt;
+            text = getFrequencyString((float) bell2FreqSlider.getValue()) + " / " + juce::String((float) bell2GainSlider.getValue(), 1) + " dB";
+        }
 
         g.setFont(juce::FontOptions(11.0f).withName("Helvetica").withStyle("Bold"));
-        float textWidth = juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), text) + 12.0f;
+        float textWidth = juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), text) + 14.0f;
         juce::Rectangle<float> bubble(pt.x - textWidth * 0.5f, pt.y - 26.0f, textWidth, 16.0f);
         bubble = bubble.constrainedWithin(juce::Rectangle<float>(filterGraphLeft, 292.0f, filterGraphRight - filterGraphLeft, 100.0f));
 
         g.setColour(juce::Colour(0xFF161618));
         g.fillRoundedRectangle(bubble, 3.0f);
-        g.setColour(juce::Colour(0xFF00E5FF).withAlpha(0.5f));
+        g.setColour(juce::Colour(0xFF00FF87).withAlpha(0.5f));
         g.drawRoundedRectangle(bubble, 3.0f, 1.0f);
         g.setColour(juce::Colours::white);
         g.drawText(text, bubble, juce::Justification::centred);
@@ -596,13 +783,13 @@ void HomeDistoAudioProcessorEditor::resized()
         modeButtons[i].setBounds(35 + (col * 105), 115 + (row * 44), 95, 32);
     }
 
-    // NOTE: lowCutSlider/highCutSlider no longer need bounds set -- they're
-    // invisible data-model-only components now (see constructor). Their
-    // value<->proportion mapping doesn't depend on their on-screen size.
+    // NOTE: all 8 EQ band sliders (low/bell1/bell2/high freq+gain) are
+    // invisible data-model-only components now -- no bounds needed, the
+    // graph itself is drawn/hit-tested via freqToX/gainToY (see paint() and
+    // the mouse handlers), not via each slider's own on-screen size.
 
-    // NEW: slope buttons now get their own centred row directly under the
-    // FILTER title, instead of squeezed into the title row. Bounds must
-    // match the slopeTrack rectangle drawn in paint().
+    // Slope buttons sit in their own centred row directly under the EQ
+    // title. Bounds must match the slopeTrack rectangle drawn in paint().
     for (int i = 0; i < 3; ++i)
         slopeButtons[i].setBounds(76 + i * 42, 291, 34, 16);
 

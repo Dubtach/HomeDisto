@@ -18,10 +18,14 @@ HomeDistoAudioProcessor::HomeDistoAudioProcessor()
     FactoryPresets::generateDefaults(*this);
 
     // Pre-allocate filter states to prevent null-dereferences
-    auto lowCutCoeffs = juce::dsp::IIR::Coefficients<float>::makeHighPass(44100.0, 20.0f);
-    auto highCutCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 20000.0f);
+    auto lowCutCoeffs = juce::dsp::IIR::Coefficients<float>::makeHighPass(44100.0, 80.0f);
+    auto highCutCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 8000.0f);
     for (auto& stage : lowCutStages)  stage.state = lowCutCoeffs;
     for (auto& stage : highCutStages) stage.state = highCutCoeffs;
+    lowShelfFilter.state = juce::dsp::IIR::Coefficients<float>::makeLowShelf(44100.0, 80.0f, 0.707f, 1.0f);
+    highShelfFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighShelf(44100.0, 8000.0f, 0.707f, 1.0f);
+    bell1Filter.state = juce::dsp::IIR::Coefficients<float>::makePeakFilter(44100.0, 400.0f, 0.8f, 1.0f);
+    bell2Filter.state = juce::dsp::IIR::Coefficients<float>::makePeakFilter(44100.0, 2500.0f, 0.8f, 1.0f);
     toneFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighShelf(44100.0, 1000.0f, 0.707f, 1.0f);
     smoothFilter.state = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 20000.0f);
     dcBlockerFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighPass(44100.0, 15.0f);
@@ -42,11 +46,32 @@ juce::AudioProcessorValueTreeState::ParameterLayout HomeDistoAudioProcessor::cre
     params.push_back(std::make_unique<juce::AudioParameterFloat>("OUT", "Output", -24.0f, 24.0f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterBool>("AUTO", "Auto", false));
 
-    juce::NormalisableRange<float> lowRange(20.0f, 1000.0f, 1.0f, 0.3f);
-    juce::NormalisableRange<float> highRange(1000.0f, 20000.0f, 10.0f, 0.3f);
-    
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("LOW_CUT", "Low Cut", lowRange, 120.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("HIGH_CUT", "High Cut", highRange, 8500.0f));
+    // REDESIGNED: was a 2-knob focus-band filter (LOW_CUT/HIGH_CUT only).
+    // Now a proper 4-band EQ: LOW and HIGH can each be a cut or a shelf,
+    // plus two fully parametric bell/peak bands in between. See the header
+    // comment above the filter members for why the old "only this band
+    // gets distorted" trick had to go once shelves/bells entered the
+    // picture (that trick only worked with pure cut filters).
+    juce::NormalisableRange<float> lowRange(20.0f, 2000.0f, 1.0f, 0.3f);
+    juce::NormalisableRange<float> highRange(500.0f, 20000.0f, 10.0f, 0.3f);
+    juce::NormalisableRange<float> bell1Range(60.0f, 6000.0f, 1.0f, 0.3f);
+    juce::NormalisableRange<float> bell2Range(200.0f, 16000.0f, 1.0f, 0.3f);
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("EQ_LOW_FREQ", "Low Freq", lowRange, 80.0f));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("EQ_LOW_TYPE", "Low Type", juce::StringArray{ "Cut", "Shelf" }, 0));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("EQ_LOW_GAIN", "Low Gain", -18.0f, 18.0f, 0.0f));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("EQ_BELL1_FREQ", "Bell 1 Freq", bell1Range, 400.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("EQ_BELL1_GAIN", "Bell 1 Gain", -18.0f, 18.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("EQ_BELL1_Q", "Bell 1 Q", 0.2f, 8.0f, 0.8f));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("EQ_BELL2_FREQ", "Bell 2 Freq", bell2Range, 2500.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("EQ_BELL2_GAIN", "Bell 2 Gain", -18.0f, 18.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("EQ_BELL2_Q", "Bell 2 Q", 0.2f, 8.0f, 0.8f));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("EQ_HIGH_FREQ", "High Freq", highRange, 8000.0f));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("EQ_HIGH_TYPE", "High Type", juce::StringArray{ "Cut", "Shelf" }, 0));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("EQ_HIGH_GAIN", "High Gain", -18.0f, 18.0f, 0.0f));
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>("TONE", "Tone", -1.0f, 1.0f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("PUNCH", "Punch", 0.0f, 1.0f, 0.5f));
@@ -63,10 +88,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout HomeDistoAudioProcessor::cre
     // complaints are exactly this, an unfiltered distortion tail.
     params.push_back(std::make_unique<juce::AudioParameterFloat>("SMOOTH", "Smooth (De-Fizz)", 0.0f, 1.0f, 0.35f));
 
-    // NEW: controls how many cascaded stages LOW_CUT/HIGH_CUT use --
-    // 12/24/48 dB/octave. Exposed in the settings popup rather than the main
-    // interface since it's a "shape the tool" control, not something you'd
-    // sweep during a mix.
+    // Controls how many cascaded stages EQ_LOW/EQ_HIGH use when in CUT mode
+    // -- 12/24/48 dB/octave. Has no effect on a band currently set to Shelf.
     params.push_back(std::make_unique<juce::AudioParameterChoice>(
         "SLOPE", "Filter Slope", juce::StringArray{ "12 dB/oct", "24 dB/oct", "48 dB/oct" }, 0));
 
@@ -83,6 +106,10 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     for (auto& stage : lowCutStages)  stage.prepare(spec);
     for (auto& stage : highCutStages) stage.prepare(spec);
     lastSlopeStageCount = 1;
+    lowShelfFilter.prepare(spec);
+    highShelfFilter.prepare(spec);
+    bell1Filter.prepare(spec);
+    bell2Filter.prepare(spec);
     toneFilter.prepare(spec);
     smoothFilter.prepare(spec);
     dcBlockerFilter.prepare(spec);
@@ -97,7 +124,6 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     // allocation on the audio thread) essentially never actually triggers.
     const int safeInitialBlockSize = juce::jmax(samplesPerBlock, 8192);
     dryBuffer.setSize(getTotalNumOutputChannels(), safeInitialBlockSize);
-    outOfBandBuffer.setSize(getTotalNumOutputChannels(), safeInitialBlockSize);
 
     smoothDrive.reset(sampleRate, 0.02);
     smoothOut.reset(sampleRate, 0.02);
@@ -107,11 +133,19 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     autoGainFactor.reset(sampleRate, 0.05);
     autoGainFactor.setCurrentAndTargetValue(1.0f);
 
-    // NEW: seed the block-rate filter-cutoff smoothers from the actual
-    // current parameter values, so the very first block after load doesn't
-    // ramp in from stale defaults.
-    smoothedLowCutHz = apvts.getRawParameterValue("LOW_CUT")->load();
-    smoothedHighCutHz = apvts.getRawParameterValue("HIGH_CUT")->load();
+    // NEW: seed all the block-rate EQ smoothers from the actual current
+    // parameter values, so the very first block after load doesn't ramp in
+    // from stale defaults.
+    smoothedLowFreqHz   = apvts.getRawParameterValue("EQ_LOW_FREQ")->load();
+    smoothedLowGainDb   = apvts.getRawParameterValue("EQ_LOW_GAIN")->load();
+    smoothedBell1FreqHz = apvts.getRawParameterValue("EQ_BELL1_FREQ")->load();
+    smoothedBell1GainDb = apvts.getRawParameterValue("EQ_BELL1_GAIN")->load();
+    smoothedBell1Q      = apvts.getRawParameterValue("EQ_BELL1_Q")->load();
+    smoothedBell2FreqHz = apvts.getRawParameterValue("EQ_BELL2_FREQ")->load();
+    smoothedBell2GainDb = apvts.getRawParameterValue("EQ_BELL2_GAIN")->load();
+    smoothedBell2Q      = apvts.getRawParameterValue("EQ_BELL2_Q")->load();
+    smoothedHighFreqHz  = apvts.getRawParameterValue("EQ_HIGH_FREQ")->load();
+    smoothedHighGainDb  = apvts.getRawParameterValue("EQ_HIGH_GAIN")->load();
     smoothedToneDb = apvts.getRawParameterValue("TONE")->load() * 6.0f;
     smoothedDeFizzHz = juce::jmap(apvts.getRawParameterValue("SMOOTH")->load(), 0.0f, 1.0f, 20000.0f, 3000.0f);
 
@@ -225,6 +259,42 @@ void HomeDistoAudioProcessor::updateHighShelf(juce::dsp::IIR::Coefficients<float
     raw[3] = (float)(2.0 * ((A - 1.0) - (A + 1.0) * cos_w0) / a0);                             // a1
     raw[4] = (float)(((A + 1.0) - (A - 1.0) * cos_w0 - 2.0 * std::sqrt(A) * alpha) / a0);      // a2
 }
+
+// NEW: low-shelf (RBJ cookbook), for EQ_LOW when set to Shelf mode.
+void HomeDistoAudioProcessor::updateLowShelf(juce::dsp::IIR::Coefficients<float>* state, float freq, float Q, float gain, double sampleRate) {
+    if (!state) return;
+    freq = juce::jmin(freq, (float)(sampleRate * 0.499));
+    double A = std::sqrt(juce::jmax(0.0001f, gain));
+    double w0 = juce::MathConstants<double>::twoPi * freq / sampleRate;
+    double cos_w0 = std::cos(w0);
+    double alpha = std::sin(w0) / (2.0 * Q);
+    double a0 = (A + 1.0) + (A - 1.0) * cos_w0 + 2.0 * std::sqrt(A) * alpha;
+
+    auto* raw = state->getRawCoefficients();
+    raw[0] = (float)(A * ((A + 1.0) - (A - 1.0) * cos_w0 + 2.0 * std::sqrt(A) * alpha) / a0); // b0
+    raw[1] = (float)(2.0 * A * ((A - 1.0) - (A + 1.0) * cos_w0) / a0);                         // b1
+    raw[2] = (float)(A * ((A + 1.0) - (A - 1.0) * cos_w0 - 2.0 * std::sqrt(A) * alpha) / a0); // b2
+    raw[3] = (float)(-2.0 * ((A - 1.0) + (A + 1.0) * cos_w0) / a0);                            // a1
+    raw[4] = (float)(((A + 1.0) + (A - 1.0) * cos_w0 - 2.0 * std::sqrt(A) * alpha) / a0);      // a2
+}
+
+// NEW: peaking/bell (RBJ cookbook), for the two BELL bands.
+void HomeDistoAudioProcessor::updatePeak(juce::dsp::IIR::Coefficients<float>* state, float freq, float Q, float gain, double sampleRate) {
+    if (!state) return;
+    freq = juce::jmin(freq, (float)(sampleRate * 0.499));
+    double A = std::sqrt(juce::jmax(0.0001f, gain));
+    double w0 = juce::MathConstants<double>::twoPi * freq / sampleRate;
+    double cos_w0 = std::cos(w0);
+    double alpha = std::sin(w0) / (2.0 * (double) juce::jmax(0.05f, Q));
+    double a0 = 1.0 + alpha / A;
+
+    auto* raw = state->getRawCoefficients();
+    raw[0] = (float)((1.0 + alpha * A) / a0);  // b0
+    raw[1] = (float)((-2.0 * cos_w0) / a0);     // b1
+    raw[2] = (float)((1.0 - alpha * A) / a0);   // b2
+    raw[3] = (float)((-2.0 * cos_w0) / a0);     // a1
+    raw[4] = (float)((1.0 - alpha / A) / a0);   // a2
+}
 // -----------------------------------------------------------------------------
 
 void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
@@ -251,13 +321,38 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         return;
 
     float driveDb = apvts.getRawParameterValue("DRIVE")->load();
-    float lowCut = apvts.getRawParameterValue("LOW_CUT")->load();
-    float highCut = apvts.getRawParameterValue("HIGH_CUT")->load();
     float tone = apvts.getRawParameterValue("TONE")->load();
     float mix = apvts.getRawParameterValue("MIX")->load();
     float punch = apvts.getRawParameterValue("PUNCH")->load();
     float outDb = apvts.getRawParameterValue("OUT")->load();
     int mode = juce::roundToInt(apvts.getRawParameterValue("MODE")->load());
+
+    // 4-band EQ parameters.
+    float lowFreqRaw  = apvts.getRawParameterValue("EQ_LOW_FREQ")->load();
+    float highFreqRaw = apvts.getRawParameterValue("EQ_HIGH_FREQ")->load();
+    int lowType  = juce::roundToInt(apvts.getRawParameterValue("EQ_LOW_TYPE")->load());  // 0=Cut, 1=Shelf
+    int highType = juce::roundToInt(apvts.getRawParameterValue("EQ_HIGH_TYPE")->load()); // 0=Cut, 1=Shelf
+    float lowGainDb  = apvts.getRawParameterValue("EQ_LOW_GAIN")->load();
+    float highGainDb = apvts.getRawParameterValue("EQ_HIGH_GAIN")->load();
+    float bell1FreqRaw = apvts.getRawParameterValue("EQ_BELL1_FREQ")->load();
+    float bell1GainDb  = apvts.getRawParameterValue("EQ_BELL1_GAIN")->load();
+    float bell1Q       = apvts.getRawParameterValue("EQ_BELL1_Q")->load();
+    float bell2FreqRaw = apvts.getRawParameterValue("EQ_BELL2_FREQ")->load();
+    float bell2GainDb  = apvts.getRawParameterValue("EQ_BELL2_GAIN")->load();
+    float bell2Q       = apvts.getRawParameterValue("EQ_BELL2_Q")->load();
+
+    // FIX: LOW/HIGH could previously cross or pass straight through each
+    // other with no constraint -- confusing to interact with and, in CUT
+    // mode, produces a nonsensical inverted band. Enforce a minimum
+    // separation, ratio-based since the frequency skew is logarithmic (a
+    // fixed Hz gap would be meaningless at 15 kHz and huge at 30 Hz).
+    constexpr float minLowHighRatio = 1.05f;
+    if (highFreqRaw < lowFreqRaw * minLowHighRatio)
+    {
+        float mid = std::sqrt(lowFreqRaw * highFreqRaw);
+        lowFreqRaw  = mid / std::sqrt(minLowHighRatio);
+        highFreqRaw = mid * std::sqrt(minLowHighRatio);
+    }
 
     double sr = getSampleRate();
     if (sr <= 0.0) sr = 44100.0;
@@ -267,19 +362,29 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     smoothMix.setTargetValue(mix);
     smoothPunch.setTargetValue(punch);
 
-    // NEW: one-pole smoothing on the filter-cutoff parameters themselves,
-    // at block rate, before they're turned into IIR coefficients. Without
-    // this, a fast knob sweep or automation ramp on LOW_CUT/HIGH_CUT/TONE/
-    // SMOOTH could jump the cutoff enough in a single block to click.
-    // coeff ~0.25 settles in roughly 8-12 blocks (a couple hundred ms),
-    // fast enough to feel responsive, slow enough to not click.
+    // One-pole smoothing on every EQ band's freq/gain/Q at block rate, same
+    // reasoning as before: a fast drag or automation ramp could otherwise
+    // jump a value enough in a single block to click.
     constexpr float filterSmoothingCoeff = 0.25f;
-    smoothedLowCutHz  = onePoleApproach(smoothedLowCutHz,  lowCut,        filterSmoothingCoeff);
-    smoothedHighCutHz = onePoleApproach(smoothedHighCutHz, highCut,       filterSmoothingCoeff);
-    smoothedToneDb    = onePoleApproach(smoothedToneDb,    tone * 6.0f,   filterSmoothingCoeff);
+    smoothedLowFreqHz   = onePoleApproach(smoothedLowFreqHz,   lowFreqRaw,   filterSmoothingCoeff);
+    smoothedLowGainDb   = onePoleApproach(smoothedLowGainDb,   lowGainDb,    filterSmoothingCoeff);
+    smoothedBell1FreqHz = onePoleApproach(smoothedBell1FreqHz, bell1FreqRaw, filterSmoothingCoeff);
+    smoothedBell1GainDb = onePoleApproach(smoothedBell1GainDb, bell1GainDb,  filterSmoothingCoeff);
+    smoothedBell1Q      = onePoleApproach(smoothedBell1Q,      bell1Q,       filterSmoothingCoeff);
+    smoothedBell2FreqHz = onePoleApproach(smoothedBell2FreqHz, bell2FreqRaw, filterSmoothingCoeff);
+    smoothedBell2GainDb = onePoleApproach(smoothedBell2GainDb, bell2GainDb,  filterSmoothingCoeff);
+    smoothedBell2Q      = onePoleApproach(smoothedBell2Q,      bell2Q,       filterSmoothingCoeff);
+    smoothedHighFreqHz  = onePoleApproach(smoothedHighFreqHz,  highFreqRaw,  filterSmoothingCoeff);
+    smoothedHighGainDb  = onePoleApproach(smoothedHighGainDb,  highGainDb,   filterSmoothingCoeff);
+    smoothedToneDb      = onePoleApproach(smoothedToneDb,      tone * 6.0f,  filterSmoothingCoeff);
 
-    updateHighPass(lowCutStages[0].state.get(), juce::jmax(20.0f, smoothedLowCutHz), sr);
-    updateLowPass(highCutStages[0].state.get(), juce::jmin(20000.0f, smoothedHighCutHz), sr);
+    updateHighPass(lowCutStages[0].state.get(),  juce::jmax(20.0f, smoothedLowFreqHz), sr);
+    updateLowPass(highCutStages[0].state.get(),  juce::jmin(20000.0f, smoothedHighFreqHz), sr);
+    updateLowShelf(lowShelfFilter.state.get(),   juce::jmax(20.0f, smoothedLowFreqHz), 0.707f, juce::Decibels::decibelsToGain(smoothedLowGainDb), sr);
+    updateHighShelf(highShelfFilter.state.get(), juce::jmin(20000.0f, smoothedHighFreqHz), 0.707f, juce::Decibels::decibelsToGain(smoothedHighGainDb), sr);
+    updatePeak(bell1Filter.state.get(), smoothedBell1FreqHz, smoothedBell1Q, juce::Decibels::decibelsToGain(smoothedBell1GainDb), sr);
+    updatePeak(bell2Filter.state.get(), smoothedBell2FreqHz, smoothedBell2Q, juce::Decibels::decibelsToGain(smoothedBell2GainDb), sr);
+
     float toneFreq = 1000.0f; 
     updateHighShelf(toneFilter.state.get(), toneFreq, 0.707f, juce::Decibels::decibelsToGain(smoothedToneDb), sr);
 
@@ -296,10 +401,6 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     {
         dryBuffer.setSize(juce::jmax(1, totalNumOutputChannels), numSamples, false, false, true);
     }
-    if (outOfBandBuffer.getNumChannels() < totalNumOutputChannels || outOfBandBuffer.getNumSamples() < numSamples)
-    {
-        outOfBandBuffer.setSize(juce::jmax(1, totalNumOutputChannels), numSamples, false, false, true);
-    }
 
     for (int ch = 0; ch < totalNumOutputChannels; ++ch)
         dryBuffer.copyFrom(ch, 0, buffer, ch, 0, numSamples);
@@ -307,17 +408,16 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     juce::dsp::AudioBlock<float> block (buffer);
     juce::dsp::ProcessContextReplacing<float> context (block);
 
-    // REDESIGNED FILTER BEHAVIOR:
-    // LOW_CUT/HIGH_CUT now define a "focus band" -- only the audio inside
-    // that range gets fed to the distortion at all. Everything outside it
-    // is recovered by subtracting the band-passed signal from the original
-    // ("outOfBand = dry - band") and passed straight to the output with NO
-    // filtering and NO distortion applied to it whatsoever. Because it's a
-    // literal subtraction rather than a second independent filter, the two
-    // pieces always sum back to the original exactly -- no comb filtering,
-    // no gaps, regardless of how steep or gentle the band edges are.
-    // NEW: SLOPE picks how many identical stages get cascaded for a
-    // steeper roll-off: 1 stage = 12 dB/oct, 2 = 24, 4 = 48.
+    // REDESIGNED: this is now a standard 4-band EQ shaping tone BEFORE the
+    // distortion stage, applied to the whole wet signal (see the header
+    // comment above the filter members for why the old "only this band
+    // gets distorted" subtraction trick isn't compatible with shelves/bells).
+    bell1Filter.process(context);
+    bell2Filter.process(context);
+
+    // SLOPE picks how many identical cut stages get cascaded for a
+    // steeper roll-off: 1 stage = 12 dB/oct, 2 = 24, 4 = 48. Only relevant
+    // when a band is actually in Cut mode.
     int slopeIndex = juce::roundToInt(apvts.getRawParameterValue("SLOPE")->load());
     int slopeStageCount = (slopeIndex <= 0) ? 1 : (slopeIndex == 1 ? 2 : 4);
     if (slopeStageCount != lastSlopeStageCount)
@@ -329,34 +429,21 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         lastSlopeStageCount = slopeStageCount;
     }
 
-    for (int i = 0; i < slopeStageCount; ++i) lowCutStages[i].process(context);   // buffer now holds only content above LOW_CUT
-    for (int i = 0; i < slopeStageCount; ++i) highCutStages[i].process(context);  // buffer now holds only the LOW_CUT..HIGH_CUT band
+    if (lowType == 0) { for (int i = 0; i < slopeStageCount; ++i) lowCutStages[i].process(context); }
+    else               { lowShelfFilter.process(context); }
 
-    for (int ch = 0; ch < totalNumOutputChannels; ++ch)
-    {
-        auto* dry = dryBuffer.getWritePointer(ch);
-        auto* band = buffer.getWritePointer(ch);
-        auto* outOfBand = outOfBandBuffer.getWritePointer(ch);
-        for (int s = 0; s < numSamples; ++s)
-            outOfBand[s] = dry[s] - band[s];
-    }
+    if (highType == 0) { for (int i = 0; i < slopeStageCount; ++i) highCutStages[i].process(context); }
+    else                { highShelfFilter.process(context); }
 
     // --- FIX: PRE-EQ BLOWUP PROTECTION ---
     // Protects against IIR filters exploding due to rapid automation sweeps.
-    // Only the focus band and its derived out-of-band complement can carry
-    // filter-instability artifacts here (dryBuffer itself is untouched raw
-    // audio and doesn't need sanitizing).
     bool wetBlewUp = false;
     for (int ch = 0; ch < totalNumOutputChannels; ++ch) {
         auto* wData = buffer.getWritePointer(ch);
-        auto* oData = outOfBandBuffer.getWritePointer(ch);
         for (int s = 0; s < numSamples; ++s) {
             if (!std::isfinite(wData[s]) || std::abs(wData[s]) > 24.0f) {
                 wData[s] = 0.0f;
                 wetBlewUp = true;
-            }
-            if (!std::isfinite(oData[s]) || std::abs(oData[s]) > 24.0f) {
-                oData[s] = 0.0f;
             }
         }
     }
@@ -364,6 +451,10 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     if (wetBlewUp) {
         for (auto& stage : lowCutStages)  stage.reset();
         for (auto& stage : highCutStages) stage.reset();
+        lowShelfFilter.reset();
+        highShelfFilter.reset();
+        bell1Filter.reset();
+        bell2Filter.reset();
     }
 
     // Measure inRMS *after* sanitation to guarantee it receives finite numbers
@@ -570,7 +661,6 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     }
 
     auto dryPointers = dryBuffer.getArrayOfReadPointers();
-    auto outOfBandPointers = outOfBandBuffer.getArrayOfReadPointers();
     auto writePointers = buffer.getArrayOfWritePointers();
 
     for (int sample = 0; sample < numSamples; ++sample)
@@ -581,15 +671,14 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
 
         for (int channel = 0; channel < totalNumOutputChannels; ++channel)
         {
-            // REDESIGNED: "wet" is no longer the whole signal run through
-            // distortion -- it's the untouched out-of-band content plus the
-            // distorted focus band, recombined. At MIX=1 you hear the full
-            // original signal with only the LOW_CUT..HIGH_CUT range altered;
-            // at MIX=0 you hear the literal, unfiltered original (drySignal
-            // is now genuinely raw -- it never went through
-            // LOW_CUT/HIGH_CUT/TONE at all, unlike before).
-            float distortedBand = writePointers[channel][sample] * currentAutoGain;
-            float wetSignal = outOfBandPointers[channel][sample] + distortedBand;
+            // REDESIGNED: back to a standard dry/fully-processed blend now
+            // that the 4-band EQ shapes the whole wet signal before
+            // distortion (rather than a subtracted "only this band gets
+            // distorted" focus region, which isn't compatible with
+            // shelves/bell bands -- see the header comment above the filter
+            // members). At MIX=1 you hear the fully EQ'd + distorted
+            // signal; at MIX=0 the literal unprocessed original.
+            float wetSignal = writePointers[channel][sample] * currentAutoGain;
             float drySignal = dryPointers[channel][sample];
             
             // Absolute final safety net: intercept rogue values immediately prior to host output

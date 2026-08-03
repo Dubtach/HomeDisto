@@ -112,9 +112,16 @@ public:
             // paint() behind all three; each button only draws its own
             // active-state highlight on top of that shared track, so they
             // read as one control instead of three disconnected boxes.
+            // FIX: was cyan, which clashed against the EQ card's own green
+            // accent (0xFF00FF87) -- now matches it for visual consistency.
             if (button.getToggleState())
             {
-                g.setColour(juce::Colour(0xFF00E5FF));
+                g.setColour(juce::Colour(0xFF00FF87));
+                g.fillRoundedRectangle(bounds.reduced(1.5f), 3.0f);
+            }
+            else if (shouldDrawButtonAsHighlighted)
+            {
+                g.setColour(juce::Colours::white.withAlpha(0.08f));
                 g.fillRoundedRectangle(bounds.reduced(1.5f), 3.0f);
             }
             return;
@@ -300,13 +307,18 @@ public:
     void resized() override;
     void parameterChanged (const juce::String& parameterID, float newValue) override;
 
-    // NEW: LOW_CUT/HIGH_CUT are now draggable handles directly on the
-    // filter curve itself (like an EQ plugin) rather than separate sliders
-    // below it -- these drive that.
+    // NEW: the 4-band EQ (LOW cut/shelf, 2 bells, HIGH cut/shelf) is now
+    // entirely driven by draggable handles directly on the graph itself
+    // (like a real EQ plugin) rather than separate sliders -- these drive
+    // that.
     void mouseMove (const juce::MouseEvent&) override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
+    // NEW: scroll wheel over a bell node adjusts its Q (bandwidth) --
+    // standard EQ-plugin convention, keeps the graph from needing a 5th
+    // draggable dimension.
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 
 private:
     HomeDistoAudioProcessor& audioProcessor;
@@ -340,28 +352,47 @@ private:
     juce::TextButton modeButtons[6];
     juce::StringArray modeNames = { "PUNCH", "TUBE", "TAPE", "DIGITAL", "CRUNCH", "FUZZ" };
     
-    // NEW: LOW_CUT/HIGH_CUT sliders still exist as the actual data model
-    // (APVTS attachment lives here) but are invisible now -- the filter
-    // curve graphic itself is the control surface, EQ-plugin style. See
-    // mouseDown/mouseDrag and lowHandlePos()/highHandlePos() below.
-    juce::Slider lowCutSlider;
-    juce::Slider highCutSlider;
+    // REDESIGNED: this is now a 4-band EQ (was a 2-node focus filter).
+    // LOW/HIGH can each be Cut or Shelf (click the node to toggle type,
+    // drag to move it); BELL1/BELL2 are fully parametric peak bands.
+    // All sliders below are still real Sliders purely as the APVTS-attached
+    // data model -- invisible, never shown; the graph itself is the control
+    // surface. Q for the bell bands is adjusted by mouse wheel over the node
+    // (standard EQ-plugin convention) rather than a separate visible control.
+    juce::Slider lowFreqSlider, lowGainSlider;
+    juce::Slider bell1FreqSlider, bell1GainSlider, bell1QSlider;
+    juce::Slider bell2FreqSlider, bell2GainSlider, bell2QSlider;
+    juce::Slider highFreqSlider, highGainSlider;
 
-    // Shared geometry for the interactive filter graph, so painting and
-    // hit-testing can never disagree with each other.
+    // Shared geometry for the interactive EQ graph, so painting and
+    // hit-testing can never disagree with each other. X is a log-frequency
+    // axis shared by ALL bands (not each parameter's own possibly-different
+    // skew) so multiple bands with different underlying ranges still line
+    // up visually correct against each other; Y is +/-18 dB gain, used for
+    // shelf/bell nodes and for drawing the cut-mode roll-off shape.
     static constexpr float filterGraphLeft = 35.0f;
     static constexpr float filterGraphRight = 235.0f;
-    static constexpr float filterGraphTopY = 320.0f;    // "pass" level (flat top)
-    static constexpr float filterGraphBottomY = 384.0f; // "cut" level (baseline)
+    static constexpr float filterGraphTopY = 320.0f;    // +18 dB
+    static constexpr float filterGraphBottomY = 384.0f; // -18 dB (also the cut-mode floor)
+    static constexpr float filterGraphMidY = (filterGraphTopY + filterGraphBottomY) * 0.5f; // 0 dB
+
+    float freqToX(float hz) const;
+    float xToFreq(float x) const;
+    float gainToY(float db) const;
+    float yToGain(float y) const;
+
     juce::Point<float> lowHandlePos();
     juce::Point<float> highHandlePos();
+    juce::Point<float> bell1HandlePos();
+    juce::Point<float> bell2HandlePos();
 
-    enum class FilterHandle { none, low, high };
+    enum class FilterHandle { none, low, bell1, bell2, high };
     FilterHandle draggingFilterHandle = FilterHandle::none;
     FilterHandle hoveredFilterHandle = FilterHandle::none;
+    void toggleBandType (const juce::String& typeParamID);
 
-    // NEW: filter slope, styled as a single segmented control rather than
-    // three separate boxes.
+    // NEW: filter slope, styled as a single segmented control. Only affects
+    // a band while it's set to Cut -- no effect on Shelf/Bell.
     juce::TextButton slopeButtons[3];
     juce::StringArray slopeButtonLabels = { "12", "24", "48" };
 
@@ -369,7 +400,10 @@ private:
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
     std::unique_ptr<SliderAttachment> driveAttach, outAttach, toneAttach, punchAttach, mixAttach;
-    std::unique_ptr<SliderAttachment> lowAttach, highAttach;
+    std::unique_ptr<SliderAttachment> lowFreqAttach, lowGainAttach;
+    std::unique_ptr<SliderAttachment> bell1FreqAttach, bell1GainAttach, bell1QAttach;
+    std::unique_ptr<SliderAttachment> bell2FreqAttach, bell2GainAttach, bell2QAttach;
+    std::unique_ptr<SliderAttachment> highFreqAttach, highGainAttach;
     std::unique_ptr<ButtonAttachment> autoAttach;
     std::unique_ptr<ButtonAttachment> bypassAttach;
 
