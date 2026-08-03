@@ -2,6 +2,146 @@
 #include "PluginEditor.h"
 #include <cmath>
 
+// NEW: preset browser content, replacing the plain native PopupMenu with
+// something that actually matches the plugin's look, plus a search box
+// (useful now that there are 30 presets across 6 categories). Owned by the
+// CallOutBox that shows it.
+class PresetBrowserPanel : public juce::Component
+{
+public:
+    PresetBrowserPanel(HomeDistoAudioProcessorEditor& ed, HomeDistoAudioProcessor& proc)
+        : editor(ed), processor(proc)
+    {
+        titleLabel.setText("PRESETS", juce::dontSendNotification);
+        titleLabel.setFont(juce::FontOptions(13.0f).withStyle("Bold"));
+        titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+        addAndMakeVisible(titleLabel);
+
+        searchBox.setTextToShowWhenEmpty("Search presets...", juce::Colours::white.withAlpha(0.35f));
+        searchBox.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xFF09090B));
+        searchBox.setColour(juce::TextEditor::textColourId, juce::Colours::white);
+        searchBox.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xFF2A2A30));
+        searchBox.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(0xFF00FF87));
+        searchBox.onTextChange = [this] { rebuildLayout(); };
+        addAndMakeVisible(searchBox);
+
+        content = std::make_unique<juce::Component>();
+        viewport.setViewedComponent(content.get(), false);
+        viewport.setScrollBarsShown(true, false);
+        addAndMakeVisible(viewport);
+
+        auto categories = processor.getAllPresetsCategorized();
+        for (auto& pair : categories)
+        {
+            CategoryUI cat;
+            cat.name = pair.first;
+
+            auto header = std::make_unique<juce::Label>();
+            header->setText(pair.first, juce::dontSendNotification);
+            header->setFont(juce::FontOptions(11.5f).withStyle("Bold"));
+            header->setColour(juce::Label::textColourId, juce::Colour(0xFF00FF87));
+            content->addAndMakeVisible(*header);
+            cat.header = std::move(header);
+
+            for (auto& file : pair.second)
+            {
+                juce::File f = file;
+                auto btn = std::make_unique<juce::TextButton>(f.getFileNameWithoutExtension());
+                btn->setName("PRESET_ROW");
+                bool isActive = (processor.currentPresetFile == f);
+                btn->setColour(juce::TextButton::buttonColourId, isActive ? juce::Colour(0xFF00FF87).withAlpha(0.18f) : juce::Colour(0xFF1A1A1E));
+                btn->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFF00FF87).withAlpha(0.25f));
+                btn->setColour(juce::TextButton::textColourOffId, isActive ? juce::Colour(0xFF00FF87) : juce::Colours::white.withAlpha(0.85f));
+                btn->onClick = [this, f] {
+                    processor.loadPreset(f);
+                    editor.updatePresetName();
+                    if (auto* cob = findParentComponentOfClass<juce::CallOutBox>())
+                        cob->dismiss();
+                };
+                content->addAndMakeVisible(*btn);
+                cat.rows.push_back(std::move(btn));
+            }
+
+            categoryUIs.push_back(std::move(cat));
+        }
+
+        setSize(260, 400);
+        rebuildLayout();
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll(juce::Colour(0xFF161618));
+        g.setColour(juce::Colour(0xFF2A2A30));
+        g.drawRect(getLocalBounds(), 1);
+    }
+
+    void resized() override
+    {
+        auto b = getLocalBounds().reduced(10);
+        titleLabel.setBounds(b.removeFromTop(20));
+        b.removeFromTop(4);
+        searchBox.setBounds(b.removeFromTop(24));
+        b.removeFromTop(6);
+        viewport.setBounds(b);
+        rebuildLayout();
+    }
+
+private:
+    struct CategoryUI
+    {
+        juce::String name;
+        std::unique_ptr<juce::Label> header;
+        std::vector<std::unique_ptr<juce::TextButton>> rows;
+    };
+
+    void rebuildLayout()
+    {
+        auto filter = searchBox.getText().trim().toLowerCase();
+        int width = juce::jmax(1, viewport.getWidth() - 8);
+        int y = 4;
+        const int rowHeight = 24;
+        const int headerHeight = 22;
+
+        for (auto& cat : categoryUIs)
+        {
+            bool anyVisibleInCategory = false;
+            for (auto& row : cat.rows)
+                if (filter.isEmpty() || row->getButtonText().toLowerCase().contains(filter))
+                    anyVisibleInCategory = true;
+
+            cat.header->setVisible(anyVisibleInCategory);
+            if (anyVisibleInCategory)
+            {
+                cat.header->setBounds(2, y, width - 4, headerHeight);
+                y += headerHeight;
+            }
+
+            for (auto& row : cat.rows)
+            {
+                bool matches = filter.isEmpty() || row->getButtonText().toLowerCase().contains(filter);
+                row->setVisible(matches);
+                if (matches)
+                {
+                    row->setBounds(0, y, width, rowHeight - 2);
+                    y += rowHeight;
+                }
+            }
+            if (anyVisibleInCategory) y += 6;
+        }
+
+        content->setSize(width, juce::jmax(y, viewport.getHeight()));
+    }
+
+    HomeDistoAudioProcessorEditor& editor;
+    HomeDistoAudioProcessor& processor;
+    juce::Label titleLabel;
+    juce::TextEditor searchBox;
+    juce::Viewport viewport;
+    std::unique_ptr<juce::Component> content;
+    std::vector<CategoryUI> categoryUIs;
+};
+
 // NEW: settings popup content. Owned by the CallOutBox that shows it (see
 // showSettingsMenu below), so its parameter attachments just need to live as
 // long as this component does.
@@ -296,24 +436,12 @@ void HomeDistoAudioProcessorEditor::updatePresetName()
 
 void HomeDistoAudioProcessorEditor::showPresetMenu()
 {
-    juce::PopupMenu menu;
-    auto categories = audioProcessor.getAllPresetsCategorized();
-
-    for (auto& pair : categories)
-    {
-        juce::PopupMenu categoryMenu;
-        for (auto& file : pair.second)
-        {
-            categoryMenu.addItem(file.getFileNameWithoutExtension(), [this, file]() {
-                audioProcessor.loadPreset(file);
-                updatePresetName();
-            });
-        }
-        // Submenu label corresponds perfectly to folder name
-        menu.addSubMenu(pair.first, categoryMenu);
-    }
-
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&presetMenuButton));
+    // FIX: was a plain native PopupMenu with OS-styled submenus -- replaced
+    // with a proper themed, searchable browser that actually matches the
+    // rest of the plugin (and highlights the currently active preset).
+    auto panel = std::make_unique<PresetBrowserPanel>(*this, audioProcessor);
+    auto bounds = presetMenuButton.getScreenBounds();
+    juce::CallOutBox::launchAsynchronously(std::move(panel), bounds, nullptr);
 }
 
 void HomeDistoAudioProcessorEditor::parameterChanged (const juce::String& parameterID, float newValue)
@@ -555,14 +683,33 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour(juce::Colour(0xFF222228));
     g.drawRoundedRectangle(10, 10, 700, 390, 8, 1.5f);
 
-    g.setFont(juce::FontOptions(22.0f).withName("Helvetica").withStyle("Bold"));
+    // REDESIGNED: was a single flat weight, "HOME : DISTO" with an awkward
+    // literal " : " for separation. Now a proper small logotype: a drop
+    // shadow for depth (same technique drawShadedCard already uses
+    // elsewhere, for consistency), colour alone carrying the HOME/DISTO
+    // split instead of a colon character, and a small tracked-out subtitle
+    // underneath for a more "designed plugin" feel.
+    juce::Font titleFont = juce::FontOptions(25.0f).withName("Helvetica").withStyle("Bold");
+    g.setFont(titleFont);
+
+    juce::String homeText = "HOME";
+    juce::String distoText = "DISTO";
+    int homeWidth = juce::GlyphArrangement::getStringWidthInt(titleFont, homeText);
+    int gap = 7;
+
+    g.setColour(juce::Colours::black.withAlpha(0.45f));
+    g.drawText(homeText, 26, 21, homeWidth, 30, juce::Justification::centredLeft);
+    g.drawText(distoText, 26 + homeWidth + gap, 21, 100, 30, juce::Justification::centredLeft);
+
     g.setColour(juce::Colours::white);
-    
-    int homeWidth = juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), "HOME : ");
-    g.drawText("HOME : ", 25, 20, homeWidth, 30, juce::Justification::centredLeft);
-    
-    g.setColour(juce::Colour(0xFF00E5FF)); 
-    g.drawText("DISTO", 25 + homeWidth, 20, 80, 30, juce::Justification::centredLeft);
+    g.drawText(homeText, 25, 20, homeWidth, 30, juce::Justification::centredLeft);
+
+    g.setColour(juce::Colour(0xFF00FF87));
+    g.drawText(distoText, 25 + homeWidth + gap, 20, 100, 30, juce::Justification::centredLeft);
+
+    g.setFont(juce::FontOptions(8.5f).withName("Helvetica").withStyle("Bold"));
+    g.setColour(juce::Colours::white.withAlpha(0.32f));
+    g.drawText("D I S T O R T I O N   E N G I N E", 26, 51, 320, 12, juce::Justification::centredLeft);
 
     g.setColour(juce::Colour(0xFF1E1E24));
     g.drawLine(25, 65, 695, 65, 2.0f); 
