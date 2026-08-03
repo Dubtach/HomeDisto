@@ -320,6 +320,11 @@ public:
     // draggable dimension.
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 
+    // FIX: PresetBrowserPanel (a separate class, not a member of this one)
+    // needs to call this after loading a preset from its own button
+    // callbacks, so it has to be public rather than private.
+    void updatePresetName();
+
 private:
     HomeDistoAudioProcessor& audioProcessor;
     MinimalistSynthLookAndFeel synthLaf;
@@ -328,7 +333,6 @@ private:
     juce::TextButton presetUpButton;
     juce::TextButton presetDownButton;
     void showPresetMenu();
-    void updatePresetName();
 
     juce::TextButton saveButton;
     juce::TextButton bypassButton;
