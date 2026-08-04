@@ -4,8 +4,7 @@
 #include <cmath>
 
 // NEW: preset browser content, replacing the plain native PopupMenu with
-// something that actually matches the plugin's look, plus a search box
-// (useful now that there are 30 presets across 6 categories). Owned by the
+// something that actually matches the plugin's look. Owned by the
 // CallOutBox that shows it.
 class PresetBrowserPanel : public juce::Component
 {
@@ -34,11 +33,34 @@ public:
         auto categories = processor.getAllPresetsCategorized();
         for (auto& pair : categories)
         {
+            // NEW: "0. Default" is pinned as its own always-visible button
+            // above the search box, not buried in the scrollable list --
+            // a one-click sane starting point every time the plugin loads.
+            if (pair.first == "0. Default" && !pair.second.isEmpty())
+            {
+                juce::File f = pair.second.getFirst();
+                defaultButton.setButtonText("DEFAULT (Quick Start)");
+                defaultButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF00FF87).withAlpha(0.14f));
+                defaultButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xFF00FF87));
+                defaultButton.onClick = [this, f] {
+                    processor.loadPreset(f);
+                    editor.updatePresetName();
+                    if (auto* cob = findParentComponentOfClass<juce::CallOutBox>())
+                        cob->dismiss();
+                };
+                addAndMakeVisible(defaultButton);
+                continue;
+            }
+
             CategoryUI cat;
             cat.name = pair.first;
+            // Strip the leading sort-order prefix ("1. Guitars" -> "Guitars")
+            // for the chip label and header -- the number is only there to
+            // control folder sort order, showing it is just noise.
+            cat.displayName = pair.first.fromFirstOccurrenceOf(". ", false, false);
 
             auto header = std::make_unique<juce::Label>();
-            header->setText(pair.first, juce::dontSendNotification);
+            header->setText(cat.displayName, juce::dontSendNotification);
             header->setFont(juce::FontOptions(11.5f).withStyle("Bold"));
             header->setColour(juce::Label::textColourId, juce::Colour(0xFF00FF87));
             content->addAndMakeVisible(*header);
@@ -60,11 +82,6 @@ public:
                         cob->dismiss();
                 };
                 content->addAndMakeVisible(*btn);
-                // FIX: previously the browser always opened scrolled to the
-                // top, so picking preset #20 then reopening to reach #21
-                // meant scrolling all the way down again every time. Track
-                // whichever row is currently active so it can be scrolled
-                // into view automatically when the panel opens.
                 if (isActive) activeRow = btn.get();
                 cat.rows.push_back(std::move(btn));
             }
@@ -72,7 +89,23 @@ public:
             categoryUIs.push_back(std::move(cat));
         }
 
-        setSize(260, 400);
+        // NEW: one chip per category, always visible above the scrollable
+        // list -- fixes "hard to see how many categories there are, have to
+        // scroll to find one." Clicking a chip jumps the list straight to
+        // that category instead of scrolling blind.
+        for (auto& cat : categoryUIs)
+        {
+            auto chip = std::make_unique<juce::TextButton>(cat.displayName);
+            chip->setName("PRESET_CHIP");
+            chip->setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF1A1A1E));
+            chip->setColour(juce::TextButton::textColourOffId, juce::Colours::white.withAlpha(0.75f));
+            juce::String targetName = cat.name;
+            chip->onClick = [this, targetName] { scrollToCategory(targetName); };
+            addAndMakeVisible(*chip);
+            categoryChips.push_back(std::move(chip));
+        }
+
+        setSize(300, 440);
         rebuildLayout();
 
         if (activeRow != nullptr)
@@ -101,6 +134,23 @@ public:
         b.removeFromTop(4);
         searchBox.setBounds(b.removeFromTop(24));
         b.removeFromTop(6);
+        defaultButton.setBounds(b.removeFromTop(26));
+        b.removeFromTop(8);
+
+        // Category chips: wrap into rows, 3 per row.
+        {
+            int chipW = (b.getWidth() - 8) / 3;
+            int x = b.getX(), y = b.getY();
+            int col = 0;
+            for (auto& chip : categoryChips)
+            {
+                chip->setBounds(x + col * (chipW + 4), y, chipW, 22);
+                if (++col >= 3) { col = 0; y += 26; }
+            }
+            int rows = (int) std::ceil(categoryChips.size() / 3.0);
+            b.removeFromTop(rows * 26 + 4);
+        }
+
         viewport.setBounds(b);
         rebuildLayout();
     }
@@ -108,10 +158,23 @@ public:
 private:
     struct CategoryUI
     {
-        juce::String name;
+        juce::String name;         // full folder name, e.g. "1. Guitars" (for lookups)
+        juce::String displayName;  // stripped, e.g. "Guitars" (for display)
         std::unique_ptr<juce::Label> header;
         std::vector<std::unique_ptr<juce::TextButton>> rows;
     };
+
+    void scrollToCategory(const juce::String& categoryName)
+    {
+        for (auto& cat : categoryUIs)
+        {
+            if (cat.name == categoryName && cat.header->isVisible())
+            {
+                viewport.setViewPosition(0, juce::jmax(0, cat.header->getY() - 4));
+                return;
+            }
+        }
+    }
 
     void rebuildLayout()
     {
@@ -155,6 +218,8 @@ private:
     HomeDistoAudioProcessor& processor;
     juce::Label titleLabel;
     juce::TextEditor searchBox;
+    juce::TextButton defaultButton;
+    std::vector<std::unique_ptr<juce::TextButton>> categoryChips;
     juce::Viewport viewport;
     std::unique_ptr<juce::Component> content;
     std::vector<CategoryUI> categoryUIs;
@@ -711,10 +776,24 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     // pixel-perfect match, not an approximation.
     if (logoImage.isValid())
     {
+        // FIX: gray halo was the previous crop's alpha threshold leaving
+        // the (not-quite-pure-black) source background at ~12% opacity --
+        // regenerated with a corrected threshold, see LogoData.h.
         float aspect = (float) logoImage.getWidth() / (float) logoImage.getHeight();
-        float targetHeight = 34.0f;
+        float targetHeight = 40.0f;
         float targetWidth = targetHeight * aspect;
-        juce::Rectangle<float> logoBounds(25.0f, 18.0f, targetWidth, targetHeight);
+        juce::Rectangle<float> logoBounds(25.0f, 14.0f, targetWidth, targetHeight);
+
+        // NEW: soft brand-colour glow behind the logo so it reads as part
+        // of this plugin's neon-on-black look rather than a flat pasted-in
+        // sticker -- same green accent as the EQ card/handles.
+        juce::ColourGradient glow(juce::Colour(0xFF00FF87).withAlpha(0.16f),
+                                   logoBounds.getCentreX(), logoBounds.getCentreY(),
+                                   juce::Colour(0xFF00FF87).withAlpha(0.0f),
+                                   logoBounds.getCentreX(), logoBounds.getY() - 36.0f, true);
+        g.setGradientFill(glow);
+        g.fillEllipse(logoBounds.expanded(24.0f, 16.0f));
+
         g.setOpacity(1.0f);
         g.drawImage(logoImage, logoBounds, juce::RectanglePlacement::xLeft | juce::RectanglePlacement::yMid);
     }
