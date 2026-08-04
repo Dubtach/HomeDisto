@@ -30,6 +30,23 @@ public:
         g.setColour(juce::Colour(0xFF0A0A0C));
         g.fillEllipse(centreX - radius + 2.0f, centreY - radius + 2.0f, (radius - 2.0f) * 2.0f, (radius - 2.0f) * 2.0f);
 
+        // NEW: small tick marks around the knob's travel -- a detail real
+        // analog-style knobs almost always have, and one this one was
+        // missing entirely.
+        {
+            const int numTicks = 11;
+            g.setColour(juce::Colours::white.withAlpha(0.18f));
+            for (int t = 0; t < numTicks; ++t)
+            {
+                float tickAngle = rotaryStartAngle + (rotaryEndAngle - rotaryStartAngle) * ((float) t / (float) (numTicks - 1));
+                float inner = radius + 2.0f;
+                float outer = radius + 5.0f;
+                juce::Point<float> p1(centreX + inner * std::sin(tickAngle), centreY - inner * std::cos(tickAngle));
+                juce::Point<float> p2(centreX + outer * std::sin(tickAngle), centreY - outer * std::cos(tickAngle));
+                g.drawLine({p1, p2}, (t == 0 || t == numTicks - 1 || t == numTicks / 2) ? 1.4f : 1.0f);
+            }
+        }
+
         juce::Path bgArc;
         bgArc.addCentredArc(centreX, centreY, radius, radius, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
         g.setColour(juce::Colour(0xFF000000).withAlpha(0.4f)); 
@@ -245,75 +262,105 @@ public:
         {
             auto bounds = button.getLocalBounds().toFloat();
             juce::Colour col = button.getToggleState() ? juce::Colours::white : juce::Colours::white.withAlpha(0.55f);
-            g.setColour(col);
-
-            float iconCx = bounds.getX() + 17.0f;
-            float iconCy = bounds.getCentreY();
             juce::String mode = button.getButtonText();
+
+            // FIX: icon was pinned to the left edge with text trailing
+            // after it, leaving the button's right side looking
+            // unbalanced. Now the icon+divider+text group is centred as a
+            // single unit within the button.
+            juce::Font labelFont(juce::FontOptions(11.0f).withName("Helvetica").withStyle(button.getToggleState() ? "Bold" : "Plain"));
+            float textWidth = (float) juce::GlyphArrangement::getStringWidthInt(labelFont, mode);
+            const float iconWidth = 16.0f, dividerGap = 9.0f;
+            float groupWidth = iconWidth + dividerGap + textWidth;
+            float groupLeft = bounds.getCentreX() - groupWidth * 0.5f;
+
+            float iconCx = groupLeft + iconWidth * 0.5f;
+            float iconCy = bounds.getCentreY();
+            g.setColour(col);
 
             if (mode == "PUNCH")
             {
-                // impact burst: short radiating lines from a centre dot
-                g.fillEllipse(iconCx - 1.8f, iconCy - 1.8f, 3.6f, 3.6f);
-                for (int a = 0; a < 6; ++a)
-                {
-                    float ang = a * juce::MathConstants<float>::twoPi / 6.0f;
-                    juce::Point<float> p1(iconCx + std::cos(ang) * 4.0f, iconCy + std::sin(ang) * 4.0f);
-                    juce::Point<float> p2(iconCx + std::cos(ang) * 7.5f, iconCy + std::sin(ang) * 7.5f);
-                    g.drawLine({p1, p2}, 1.6f);
-                }
+                // 4-point spark/impact star
+                juce::Path star;
+                star.startNewSubPath(iconCx, iconCy - 7.0f);
+                star.lineTo(iconCx + 2.0f, iconCy - 2.0f);
+                star.lineTo(iconCx + 7.0f, iconCy);
+                star.lineTo(iconCx + 2.0f, iconCy + 2.0f);
+                star.lineTo(iconCx, iconCy + 7.0f);
+                star.lineTo(iconCx - 2.0f, iconCy + 2.0f);
+                star.lineTo(iconCx - 7.0f, iconCy);
+                star.lineTo(iconCx - 2.0f, iconCy - 2.0f);
+                star.closeSubPath();
+                g.fillPath(star);
             }
             else if (mode == "TUBE")
             {
-                // vacuum tube: capsule outline with two grid lines inside
-                juce::Rectangle<float> capsule(iconCx - 4.0f, iconCy - 7.0f, 8.0f, 14.0f);
-                g.drawRoundedRectangle(capsule, 4.0f, 1.4f);
-                g.drawLine(iconCx - 2.5f, iconCy - 1.5f, iconCx + 2.5f, iconCy - 1.5f, 1.2f);
-                g.drawLine(iconCx - 2.5f, iconCy + 1.5f, iconCx + 2.5f, iconCy + 1.5f, 1.2f);
-                g.drawLine(iconCx, iconCy + 7.0f, iconCx, iconCy + 9.5f, 1.4f); // pins
+                // valve/bulb silhouette with two base pins -- simplified,
+                // no internal clutter, reads clean at this size.
+                juce::Rectangle<float> bulb(iconCx - 3.5f, iconCy - 7.0f, 7.0f, 10.5f);
+                g.drawRoundedRectangle(bulb, 3.5f, 1.4f);
+                g.drawLine(iconCx - 1.8f, iconCy + 3.5f, iconCx - 1.8f, iconCy + 7.0f, 1.4f);
+                g.drawLine(iconCx + 1.8f, iconCy + 3.5f, iconCx + 1.8f, iconCy + 7.0f, 1.4f);
             }
             else if (mode == "TAPE")
             {
-                // cassette reels: two small circles joined by a baseline
-                g.drawEllipse(iconCx - 7.0f, iconCy - 3.5f, 7.0f, 7.0f, 1.4f);
-                g.drawEllipse(iconCx, iconCy - 3.5f, 7.0f, 7.0f, 1.4f);
-                g.fillEllipse(iconCx - 4.3f, iconCy - 0.8f, 1.6f, 1.6f);
-                g.fillEllipse(iconCx + 2.7f, iconCy - 0.8f, 1.6f, 1.6f);
-                g.drawLine(iconCx - 7.0f, iconCy + 4.5f, iconCx + 7.0f, iconCy + 4.5f, 1.2f);
+                // single reel: rim + hub + three spokes
+                g.drawEllipse(iconCx - 6.0f, iconCy - 6.0f, 12.0f, 12.0f, 1.4f);
+                g.fillEllipse(iconCx - 1.6f, iconCy - 1.6f, 3.2f, 3.2f);
+                for (int a = 0; a < 3; ++a)
+                {
+                    float ang = a * juce::MathConstants<float>::twoPi / 3.0f + juce::MathConstants<float>::halfPi;
+                    g.drawLine(iconCx, iconCy, iconCx + std::cos(ang) * 5.2f, iconCy + std::sin(ang) * 5.2f, 1.3f);
+                }
             }
             else if (mode == "DIGITAL")
             {
-                // 2x2 pixel grid
-                float s = 3.2f, gap = 1.4f;
-                g.fillRect(iconCx - s - gap * 0.5f, iconCy - s - gap * 0.5f, s, s);
-                g.fillRect(iconCx + gap * 0.5f, iconCy - s - gap * 0.5f, s, s);
-                g.fillRect(iconCx - s - gap * 0.5f, iconCy + gap * 0.5f, s, s);
-                g.fillRect(iconCx + gap * 0.5f, iconCy + gap * 0.5f, s, s);
+                // crisp 2x2 pixel grid, rounded to match the plugin's
+                // rounded-rect language elsewhere
+                float s = 3.4f, gap = 1.6f;
+                for (int gx = 0; gx < 2; ++gx)
+                    for (int gy = 0; gy < 2; ++gy)
+                        g.fillRoundedRectangle(iconCx - s - gap * 0.5f + gx * (s + gap),
+                                                iconCy - s - gap * 0.5f + gy * (s + gap), s, s, 0.8f);
             }
             else if (mode == "CRUNCH")
             {
-                // jagged distortion zigzag
-                juce::Path zig;
-                zig.startNewSubPath(iconCx - 7.0f, iconCy);
-                zig.lineTo(iconCx - 3.5f, iconCy - 6.0f);
-                zig.lineTo(iconCx, iconCy + 5.0f);
-                zig.lineTo(iconCx + 3.5f, iconCy - 6.0f);
-                zig.lineTo(iconCx + 7.0f, iconCy);
-                g.strokePath(zig, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+                // single clean lightning bolt, filled -- reads instantly
+                // as "aggressive" at a glance
+                juce::Path bolt;
+                bolt.startNewSubPath(iconCx + 1.5f, iconCy - 7.5f);
+                bolt.lineTo(iconCx - 4.5f, iconCy + 1.0f);
+                bolt.lineTo(iconCx - 0.5f, iconCy + 1.0f);
+                bolt.lineTo(iconCx - 1.5f, iconCy + 7.5f);
+                bolt.lineTo(iconCx + 4.5f, iconCy - 1.5f);
+                bolt.lineTo(iconCx + 0.5f, iconCy - 1.5f);
+                bolt.closeSubPath();
+                g.fillPath(bolt);
             }
             else if (mode == "FUZZ")
             {
-                // fuzzy scribble: loose irregular loop
-                juce::Path scribble;
-                scribble.startNewSubPath(iconCx - 6.0f, iconCy + 2.0f);
-                scribble.cubicTo(iconCx - 6.0f, iconCy - 7.0f, iconCx + 2.0f, iconCy - 8.0f, iconCx + 3.0f, iconCy - 2.0f);
-                scribble.cubicTo(iconCx + 4.0f, iconCy + 3.0f, iconCx - 3.0f, iconCy + 6.0f, iconCx + 6.0f, iconCy + 3.0f);
-                g.strokePath(scribble, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+                // fuzzy ball: core circle ringed with short irregular
+                // spikes -- clearer "fuzzy texture" read than a scribble
+                g.fillEllipse(iconCx - 3.2f, iconCy - 3.2f, 6.4f, 6.4f);
+                for (int a = 0; a < 8; ++a)
+                {
+                    float ang = a * juce::MathConstants<float>::twoPi / 8.0f;
+                    float len = (a % 2 == 0) ? 4.0f : 2.6f;
+                    juce::Point<float> p1(iconCx + std::cos(ang) * 3.2f, iconCy + std::sin(ang) * 3.2f);
+                    juce::Point<float> p2(iconCx + std::cos(ang) * (3.2f + len), iconCy + std::sin(ang) * (3.2f + len));
+                    g.drawLine({p1, p2}, 1.3f);
+                }
             }
 
-            g.setFont(juce::FontOptions(11.0f).withName("Helvetica").withStyle(button.getToggleState() ? "Bold" : "Plain"));
+            // Small, unnoticeable divider between icon and label.
+            float dividerX = groupLeft + iconWidth + dividerGap * 0.5f;
+            g.setColour(juce::Colours::white.withAlpha(button.getToggleState() ? 0.18f : 0.10f));
+            g.drawLine(dividerX, iconCy - 7.0f, dividerX, iconCy + 7.0f, 1.0f);
+
+            g.setFont(labelFont);
             g.setColour(col);
-            g.drawText(mode, bounds.withTrimmedLeft(28.0f), juce::Justification::centredLeft);
+            float textLeft = groupLeft + iconWidth + dividerGap;
+            g.drawText(mode, juce::Rectangle<float>(textLeft, bounds.getY(), textWidth + 2.0f, bounds.getHeight()), juce::Justification::centredLeft);
             return;
         }
         
@@ -492,6 +539,12 @@ private:
 
     juce::String getFrequencyString(float hz);
     void drawShadedCard(juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour baseColour);
+
+    // NEW: draws text with per-character spacing computed so the whole
+    // string comes out to exactly targetWidth -- used to make the
+    // "DUBTACH DSP" credit line match the title's width precisely rather
+    // than guessing a number of literal spaces.
+    void drawTrackedText(juce::Graphics& g, const juce::String& text, float x, float y, float height, float targetWidth, const juce::Font& font);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HomeDistoAudioProcessorEditor)
 };

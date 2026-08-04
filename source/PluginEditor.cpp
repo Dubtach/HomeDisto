@@ -735,6 +735,27 @@ juce::String HomeDistoAudioProcessorEditor::getFrequencyString(float hz)
     return juce::String(juce::roundToInt(hz)) + " Hz";
 }
 
+void HomeDistoAudioProcessorEditor::drawTrackedText(juce::Graphics& g, const juce::String& text, float x, float y, float height, float targetWidth, const juce::Font& font)
+{
+    g.setFont(font);
+    if (text.isEmpty()) return;
+
+    float naturalWidth = (float) juce::GlyphArrangement::getStringWidthInt(font, text);
+    int numGaps = text.length() - 1;
+    // Extra space distributed evenly between every adjacent pair of
+    // characters (including the literal space already in the string, so
+    // the word-gap grows proportionally too, not just letter-gaps).
+    float extraPerGap = numGaps > 0 ? (targetWidth - naturalWidth) / (float) numGaps : 0.0f;
+
+    float cx = x;
+    for (int i = 0; i < text.length(); ++i)
+    {
+        juce::String ch = text.substring(i, i + 1);
+        g.drawText(ch, (int) cx, (int) y, 24, (int) height, juce::Justification::centredLeft);
+        cx += (float) juce::GlyphArrangement::getStringWidthInt(font, ch) + extraPerGap;
+    }
+}
+
 void HomeDistoAudioProcessorEditor::drawShadedCard(juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour baseColour)
 {
     for (int i = 1; i <= 7; ++i)
@@ -777,18 +798,6 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colour(0xFF09090B));
 
-    // NEW: faint outer accent glow around the whole panel -- small detail
-    // that gives the plugin a bit more "designed product" presence instead
-    // of the panel just sitting flat against the window background.
-    {
-        juce::Rectangle<float> panel(10.0f, 10.0f, 700.0f, 390.0f);
-        for (int i = 4; i >= 1; --i)
-        {
-            g.setColour(juce::Colour(0xFF00FF87).withAlpha(0.03f * i));
-            g.drawRoundedRectangle(panel.expanded((float) i * 1.5f), 8.0f + (float) i, 1.5f);
-        }
-    }
-
     g.setColour(juce::Colour(0xFF111114));
     g.fillRoundedRectangle(10, 10, 700, 390, 8); 
     g.setColour(juce::Colour(0xFF222228));
@@ -807,6 +816,7 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     juce::String homeText = "Home";
     juce::String distoText = "Disto";
     int homeWidth = juce::GlyphArrangement::getStringWidthInt(titleFont, homeText);
+    int distoWidth = juce::GlyphArrangement::getStringWidthInt(titleFont, distoText);
 
     g.setColour(juce::Colours::black.withAlpha(0.4f));
     g.drawText(homeText, 26, 15, homeWidth, 32, juce::Justification::centredLeft);
@@ -818,11 +828,15 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour(juce::Colour(0xFF00FF87));
     g.drawText(distoText, 25 + homeWidth, 14, 110, 32, juce::Justification::centredLeft);
 
-    // NEW: company credit line underneath, tracked-out small caps -- the
-    // kind of understated "by [studio]" line real commercial plugins carry.
-    g.setFont(juce::FontOptions(9.0f).withName("Helvetica").withStyle("Bold"));
+    // NEW: company credit line underneath. FIX: rather than guessing a
+    // number of literal spaces between letters (which only ever
+    // coincidentally matches the title's width), this measures the actual
+    // "HomeDisto" width and tracks each letter out by the exact amount
+    // needed to match it precisely -- exact regardless of what font or
+    // text either line ends up using later.
+    juce::Font subtitleFont = juce::FontOptions(9.0f).withName("Helvetica").withStyle("Bold");
     g.setColour(juce::Colours::white.withAlpha(0.4f));
-    g.drawText("D U B T A C H   D S P", 26, 47, 300, 12, juce::Justification::centredLeft);
+    drawTrackedText(g, "DUBTACH DSP", 26.0f, 47.0f, 12.0f, (float) (homeWidth + distoWidth), subtitleFont);
 
     g.setColour(juce::Colour(0xFF1E1E24));
     g.drawLine(25, 65, 695, 65, 2.0f); 
@@ -842,9 +856,16 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont(juce::FontOptions(14.0f).withName("Helvetica").withStyle("Bold"));
 
     drawCardText("MODE", 20, 90, 230, 20, juce::Justification::centred);
+    // NEW: small underline beneath each card's primary title -- a detail
+    // that gives the label a bit more typographic structure.
+    g.setColour(juce::Colours::black.withAlpha(0.25f));
+    g.drawLine(115.0f, 109.0f, 155.0f, 109.0f, 1.2f);
+
     // FIX: renamed from FILTER -- this is a real 4-band EQ now (Low
     // Cut/Shelf, 2 Bell bands, High Cut/Shelf), not just a filter.
     drawCardText("EQ", 20, 271, 230, 18, juce::Justification::centred);
+    g.setColour(juce::Colours::black.withAlpha(0.25f));
+    g.drawLine(125.0f, 288.0f, 145.0f, 288.0f, 1.2f);
 
     // NEW: shared pill-shaped track behind the slope segmented control --
     // drawn here (once, in the parent) so all 3 buttons read as one control.
@@ -987,6 +1008,8 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 
     g.setFont(juce::FontOptions(14.0f).withName("Helvetica").withStyle("Bold"));
     drawCardText("DRIVE", 260, 90, 260, 20, juce::Justification::centred); 
+    g.setColour(juce::Colours::black.withAlpha(0.25f));
+    g.drawLine(370.0f, 109.0f, 410.0f, 109.0f, 1.2f);
     drawCardText("TONE", 285, 260, 80, 20, juce::Justification::centred);
     drawCardText("PUNCH", 415, 260, 80, 20, juce::Justification::centred);
 
@@ -998,6 +1021,8 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 
     g.setFont(juce::FontOptions(14.0f).withName("Helvetica").withStyle("Bold"));
     drawCardText("OUTPUT", 545, 90, 70, 20, juce::Justification::left);
+    g.setColour(juce::Colours::black.withAlpha(0.25f));
+    g.drawLine(545.0f, 109.0f, 598.0f, 109.0f, 1.2f);
     drawCardText("MIX", 580, 260, 70, 20, juce::Justification::centred); 
 
     g.setFont(juce::FontOptions(10.0f).withName("Helvetica").withStyle("Bold"));
