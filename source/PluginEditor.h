@@ -237,6 +237,85 @@ public:
             g.drawText(button.getButtonText(), button.getLocalBounds(), juce::Justification::centred);
             return;
         }
+
+        // NEW: each distortion mode gets its own small icon so the six
+        // options are recognisable at a glance, not just six identical
+        // buttons differentiated only by a word.
+        if (button.getName() == "MODE_BTN")
+        {
+            auto bounds = button.getLocalBounds().toFloat();
+            juce::Colour col = button.getToggleState() ? juce::Colours::white : juce::Colours::white.withAlpha(0.55f);
+            g.setColour(col);
+
+            float iconCx = bounds.getX() + 17.0f;
+            float iconCy = bounds.getCentreY();
+            juce::String mode = button.getButtonText();
+
+            if (mode == "PUNCH")
+            {
+                // impact burst: short radiating lines from a centre dot
+                g.fillEllipse(iconCx - 1.8f, iconCy - 1.8f, 3.6f, 3.6f);
+                for (int a = 0; a < 6; ++a)
+                {
+                    float ang = a * juce::MathConstants<float>::twoPi / 6.0f;
+                    juce::Point<float> p1(iconCx + std::cos(ang) * 4.0f, iconCy + std::sin(ang) * 4.0f);
+                    juce::Point<float> p2(iconCx + std::cos(ang) * 7.5f, iconCy + std::sin(ang) * 7.5f);
+                    g.drawLine({p1, p2}, 1.6f);
+                }
+            }
+            else if (mode == "TUBE")
+            {
+                // vacuum tube: capsule outline with two grid lines inside
+                juce::Rectangle<float> capsule(iconCx - 4.0f, iconCy - 7.0f, 8.0f, 14.0f);
+                g.drawRoundedRectangle(capsule, 4.0f, 1.4f);
+                g.drawLine(iconCx - 2.5f, iconCy - 1.5f, iconCx + 2.5f, iconCy - 1.5f, 1.2f);
+                g.drawLine(iconCx - 2.5f, iconCy + 1.5f, iconCx + 2.5f, iconCy + 1.5f, 1.2f);
+                g.drawLine(iconCx, iconCy + 7.0f, iconCx, iconCy + 9.5f, 1.4f); // pins
+            }
+            else if (mode == "TAPE")
+            {
+                // cassette reels: two small circles joined by a baseline
+                g.drawEllipse(iconCx - 7.0f, iconCy - 3.5f, 7.0f, 7.0f, 1.4f);
+                g.drawEllipse(iconCx, iconCy - 3.5f, 7.0f, 7.0f, 1.4f);
+                g.fillEllipse(iconCx - 4.3f, iconCy - 0.8f, 1.6f, 1.6f);
+                g.fillEllipse(iconCx + 2.7f, iconCy - 0.8f, 1.6f, 1.6f);
+                g.drawLine(iconCx - 7.0f, iconCy + 4.5f, iconCx + 7.0f, iconCy + 4.5f, 1.2f);
+            }
+            else if (mode == "DIGITAL")
+            {
+                // 2x2 pixel grid
+                float s = 3.2f, gap = 1.4f;
+                g.fillRect(iconCx - s - gap * 0.5f, iconCy - s - gap * 0.5f, s, s);
+                g.fillRect(iconCx + gap * 0.5f, iconCy - s - gap * 0.5f, s, s);
+                g.fillRect(iconCx - s - gap * 0.5f, iconCy + gap * 0.5f, s, s);
+                g.fillRect(iconCx + gap * 0.5f, iconCy + gap * 0.5f, s, s);
+            }
+            else if (mode == "CRUNCH")
+            {
+                // jagged distortion zigzag
+                juce::Path zig;
+                zig.startNewSubPath(iconCx - 7.0f, iconCy);
+                zig.lineTo(iconCx - 3.5f, iconCy - 6.0f);
+                zig.lineTo(iconCx, iconCy + 5.0f);
+                zig.lineTo(iconCx + 3.5f, iconCy - 6.0f);
+                zig.lineTo(iconCx + 7.0f, iconCy);
+                g.strokePath(zig, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            }
+            else if (mode == "FUZZ")
+            {
+                // fuzzy scribble: loose irregular loop
+                juce::Path scribble;
+                scribble.startNewSubPath(iconCx - 6.0f, iconCy + 2.0f);
+                scribble.cubicTo(iconCx - 6.0f, iconCy - 7.0f, iconCx + 2.0f, iconCy - 8.0f, iconCx + 3.0f, iconCy - 2.0f);
+                scribble.cubicTo(iconCx + 4.0f, iconCy + 3.0f, iconCx - 3.0f, iconCy + 6.0f, iconCx + 6.0f, iconCy + 3.0f);
+                g.strokePath(scribble, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            }
+
+            g.setFont(juce::FontOptions(11.0f).withName("Helvetica").withStyle(button.getToggleState() ? "Bold" : "Plain"));
+            g.setColour(col);
+            g.drawText(mode, bounds.withTrimmedLeft(28.0f), juce::Justification::centredLeft);
+            return;
+        }
         
         // --- NEW FIX: Check button name instead of Unicode text ---
         if (button.getName() == "PRESET_UP" || button.getName() == "PRESET_DOWN")
@@ -328,12 +407,6 @@ public:
 private:
     HomeDistoAudioProcessor& audioProcessor;
     MinimalistSynthLookAndFeel synthLaf;
-
-    // NEW: the actual provided logo artwork, embedded and drawn directly --
-    // gives a pixel-perfect match to the logo rather than approximating its
-    // custom circuit-board-styled lettering with a system font (which can't
-    // reproduce hand-drawn details like the stroke-terminal dots at all).
-    juce::Image logoImage;
 
     juce::TextButton presetMenuButton;
     juce::TextButton presetUpButton;

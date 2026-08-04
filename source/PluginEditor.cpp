@@ -1,6 +1,5 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
-#include "LogoData.h"
 #include <cmath>
 
 // NEW: preset browser content, replacing the plain native PopupMenu with
@@ -308,8 +307,6 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     setSize (720, 410);
     setLookAndFeel(&synthLaf); 
 
-    logoImage = juce::ImageCache::getFromMemory(LogoData::logoPngData, LogoData::logoPngDataSize);
-
     // Replaced combo box with distinct functional buttons
     presetMenuButton.setButtonText("Select Preset...");
     presetMenuButton.onClick = [this] { showPresetMenu(); };
@@ -438,6 +435,7 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     for (int i = 0; i < 6; ++i) 
     {
         modeButtons[i].setButtonText(modeNames[i]);
+        modeButtons[i].setName("MODE_BTN");
         modeButtons[i].setRadioGroupId(100);
         modeButtons[i].setClickingTogglesState(true);
         addAndMakeVisible(modeButtons[i]);
@@ -750,6 +748,21 @@ void HomeDistoAudioProcessorEditor::drawShadedCard(juce::Graphics& g, juce::Rect
     g.setGradientFill(grad);
     g.fillRoundedRectangle(bounds, 6.0f);
 
+    // NEW: soft glass-like highlight along the top edge -- a small detail
+    // that keeps the saturated card colours from reading as flat blocks.
+    {
+        juce::Rectangle<float> sheenArea = bounds.withHeight(bounds.getHeight() * 0.42f);
+        juce::ColourGradient sheen(juce::Colours::white.withAlpha(0.10f), sheenArea.getX(), sheenArea.getY(),
+                                    juce::Colours::white.withAlpha(0.0f), sheenArea.getX(), sheenArea.getBottom(), false);
+        juce::Path sheenPath;
+        sheenPath.addRoundedRectangle(bounds, 6.0f);
+        g.saveState();
+        g.reduceClipRegion(sheenPath);
+        g.setGradientFill(sheen);
+        g.fillRect(sheenArea);
+        g.restoreState();
+    }
+
     g.setColour(juce::Colours::black.withAlpha(0.12f));
     for (float y = bounds.getY() + 4.0f; y < bounds.getBottom() - 2.0f; y += 4.0f)
         g.drawLine(bounds.getX() + 2.0f, y, bounds.getRight() - 2.0f, y, 1.2f);
@@ -764,39 +777,52 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colour(0xFF09090B));
 
+    // NEW: faint outer accent glow around the whole panel -- small detail
+    // that gives the plugin a bit more "designed product" presence instead
+    // of the panel just sitting flat against the window background.
+    {
+        juce::Rectangle<float> panel(10.0f, 10.0f, 700.0f, 390.0f);
+        for (int i = 4; i >= 1; --i)
+        {
+            g.setColour(juce::Colour(0xFF00FF87).withAlpha(0.03f * i));
+            g.drawRoundedRectangle(panel.expanded((float) i * 1.5f), 8.0f + (float) i, 1.5f);
+        }
+    }
+
     g.setColour(juce::Colour(0xFF111114));
     g.fillRoundedRectangle(10, 10, 700, 390, 8); 
     g.setColour(juce::Colour(0xFF222228));
     g.drawRoundedRectangle(10, 10, 700, 390, 8, 1.5f);
 
-    // REDESIGNED: was hand-drawn text trying to approximate the logo with a
-    // system font -- a system font can never reproduce custom, hand-drawn
-    // details like the circuit-board stroke-terminal dots in the actual
-    // logo artwork. Drawing the real provided logo image instead gives a
-    // pixel-perfect match, not an approximation.
-    if (logoImage.isValid())
-    {
-        // FIX: gray halo was the previous crop's alpha threshold leaving
-        // the (not-quite-pure-black) source background at ~12% opacity --
-        // regenerated with a corrected threshold, see LogoData.h.
-        float aspect = (float) logoImage.getWidth() / (float) logoImage.getHeight();
-        float targetHeight = 40.0f;
-        float targetWidth = targetHeight * aspect;
-        juce::Rectangle<float> logoBounds(25.0f, 14.0f, targetWidth, targetHeight);
+    // REDESIGNED (again): the embedded logo image was a decorative,
+    // hand-drawn circuit-dot display face -- cool as a standalone piece of
+    // art, but it clashed with the rest of this interface, which is clean
+    // flat Helvetica everywhere else. Back to vector text, but done with
+    // more care this time: mixed case (matching how the name actually
+    // reads, not shouted in all-caps), one clean weight, tight kerning
+    // between the two halves, and a company credit line underneath.
+    juce::Font titleFont = juce::FontOptions(26.0f).withName("Helvetica").withStyle("Bold");
+    g.setFont(titleFont);
 
-        // NEW: soft brand-colour glow behind the logo so it reads as part
-        // of this plugin's neon-on-black look rather than a flat pasted-in
-        // sticker -- same green accent as the EQ card/handles.
-        juce::ColourGradient glow(juce::Colour(0xFF00FF87).withAlpha(0.16f),
-                                   logoBounds.getCentreX(), logoBounds.getCentreY(),
-                                   juce::Colour(0xFF00FF87).withAlpha(0.0f),
-                                   logoBounds.getCentreX(), logoBounds.getY() - 36.0f, true);
-        g.setGradientFill(glow);
-        g.fillEllipse(logoBounds.expanded(24.0f, 16.0f));
+    juce::String homeText = "Home";
+    juce::String distoText = "Disto";
+    int homeWidth = juce::GlyphArrangement::getStringWidthInt(titleFont, homeText);
 
-        g.setOpacity(1.0f);
-        g.drawImage(logoImage, logoBounds, juce::RectanglePlacement::xLeft | juce::RectanglePlacement::yMid);
-    }
+    g.setColour(juce::Colours::black.withAlpha(0.4f));
+    g.drawText(homeText, 26, 15, homeWidth, 32, juce::Justification::centredLeft);
+    g.drawText(distoText, 26 + homeWidth, 15, 110, 32, juce::Justification::centredLeft);
+
+    g.setColour(juce::Colours::white);
+    g.drawText(homeText, 25, 14, homeWidth, 32, juce::Justification::centredLeft);
+
+    g.setColour(juce::Colour(0xFF00FF87));
+    g.drawText(distoText, 25 + homeWidth, 14, 110, 32, juce::Justification::centredLeft);
+
+    // NEW: company credit line underneath, tracked-out small caps -- the
+    // kind of understated "by [studio]" line real commercial plugins carry.
+    g.setFont(juce::FontOptions(9.0f).withName("Helvetica").withStyle("Bold"));
+    g.setColour(juce::Colours::white.withAlpha(0.4f));
+    g.drawText("D U B T A C H   D S P", 26, 47, 300, 12, juce::Justification::centredLeft);
 
     g.setColour(juce::Colour(0xFF1E1E24));
     g.drawLine(25, 65, 695, 65, 2.0f); 
