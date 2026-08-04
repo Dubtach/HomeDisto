@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "LogoData.h"
 #include <cmath>
 
 // NEW: preset browser content, replacing the plain native PopupMenu with
@@ -59,6 +60,12 @@ public:
                         cob->dismiss();
                 };
                 content->addAndMakeVisible(*btn);
+                // FIX: previously the browser always opened scrolled to the
+                // top, so picking preset #20 then reopening to reach #21
+                // meant scrolling all the way down again every time. Track
+                // whichever row is currently active so it can be scrolled
+                // into view automatically when the panel opens.
+                if (isActive) activeRow = btn.get();
                 cat.rows.push_back(std::move(btn));
             }
 
@@ -67,6 +74,17 @@ public:
 
         setSize(260, 400);
         rebuildLayout();
+
+        if (activeRow != nullptr)
+        {
+            // Centre the active row in the visible area rather than just
+            // scrolling it to the top edge, so the couple of presets before
+            // AND after it are visible too -- exactly what makes stepping
+            // to the next one without rescrolling possible.
+            int rowY = activeRow->getBounds().getCentreY();
+            int targetY = juce::jmax(0, rowY - viewport.getHeight() / 2);
+            viewport.setViewPosition(0, targetY);
+        }
     }
 
     void paint (juce::Graphics& g) override
@@ -140,6 +158,7 @@ private:
     juce::Viewport viewport;
     std::unique_ptr<juce::Component> content;
     std::vector<CategoryUI> categoryUIs;
+    juce::TextButton* activeRow = nullptr; // for auto-scroll-to-active on open
 };
 
 // NEW: settings popup content. Owned by the CallOutBox that shows it (see
@@ -223,6 +242,8 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
 
     setSize (720, 410);
     setLookAndFeel(&synthLaf); 
+
+    logoImage = juce::ImageCache::getFromMemory(LogoData::logoPngData, LogoData::logoPngDataSize);
 
     // Replaced combo box with distinct functional buttons
     presetMenuButton.setButtonText("Select Preset...");
@@ -683,33 +704,20 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour(juce::Colour(0xFF222228));
     g.drawRoundedRectangle(10, 10, 700, 390, 8, 1.5f);
 
-    // REDESIGNED: was a single flat weight, "HOME : DISTO" with an awkward
-    // literal " : " for separation. Now a proper small logotype: a drop
-    // shadow for depth (same technique drawShadedCard already uses
-    // elsewhere, for consistency), colour alone carrying the HOME/DISTO
-    // split instead of a colon character, and a small tracked-out subtitle
-    // underneath for a more "designed plugin" feel.
-    juce::Font titleFont = juce::FontOptions(25.0f).withName("Helvetica").withStyle("Bold");
-    g.setFont(titleFont);
-
-    juce::String homeText = "HOME";
-    juce::String distoText = "DISTO";
-    int homeWidth = juce::GlyphArrangement::getStringWidthInt(titleFont, homeText);
-    int gap = 7;
-
-    g.setColour(juce::Colours::black.withAlpha(0.45f));
-    g.drawText(homeText, 26, 21, homeWidth, 30, juce::Justification::centredLeft);
-    g.drawText(distoText, 26 + homeWidth + gap, 21, 100, 30, juce::Justification::centredLeft);
-
-    g.setColour(juce::Colours::white);
-    g.drawText(homeText, 25, 20, homeWidth, 30, juce::Justification::centredLeft);
-
-    g.setColour(juce::Colour(0xFF00FF87));
-    g.drawText(distoText, 25 + homeWidth + gap, 20, 100, 30, juce::Justification::centredLeft);
-
-    g.setFont(juce::FontOptions(8.5f).withName("Helvetica").withStyle("Bold"));
-    g.setColour(juce::Colours::white.withAlpha(0.32f));
-    g.drawText("D I S T O R T I O N   E N G I N E", 26, 51, 320, 12, juce::Justification::centredLeft);
+    // REDESIGNED: was hand-drawn text trying to approximate the logo with a
+    // system font -- a system font can never reproduce custom, hand-drawn
+    // details like the circuit-board stroke-terminal dots in the actual
+    // logo artwork. Drawing the real provided logo image instead gives a
+    // pixel-perfect match, not an approximation.
+    if (logoImage.isValid())
+    {
+        float aspect = (float) logoImage.getWidth() / (float) logoImage.getHeight();
+        float targetHeight = 34.0f;
+        float targetWidth = targetHeight * aspect;
+        juce::Rectangle<float> logoBounds(25.0f, 18.0f, targetWidth, targetHeight);
+        g.setOpacity(1.0f);
+        g.drawImage(logoImage, logoBounds, juce::RectanglePlacement::xLeft | juce::RectanglePlacement::yMid);
+    }
 
     g.setColour(juce::Colour(0xFF1E1E24));
     g.drawLine(25, 65, 695, 65, 2.0f); 

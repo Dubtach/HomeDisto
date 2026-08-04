@@ -329,6 +329,12 @@ private:
     HomeDistoAudioProcessor& audioProcessor;
     MinimalistSynthLookAndFeel synthLaf;
 
+    // NEW: the actual provided logo artwork, embedded and drawn directly --
+    // gives a pixel-perfect match to the logo rather than approximating its
+    // custom circuit-board-styled lettering with a system font (which can't
+    // reproduce hand-drawn details like the stroke-terminal dots at all).
+    juce::Image logoImage;
+
     juce::TextButton presetMenuButton;
     juce::TextButton presetUpButton;
     juce::TextButton presetDownButton;
