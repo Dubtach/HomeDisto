@@ -658,39 +658,60 @@ void HomeDistoAudioProcessorEditor::mouseDrag (const juce::MouseEvent& e)
     float newFreq = xToFreq(e.position.x);
     float newGain = yToGain(e.position.y);
 
-    // FIX: LOW/HIGH could previously be dragged past each other. Clamp each
-    // against the other's current frequency (ratio-based, matching the
-    // defensive clamp on the DSP side) so they can't cross.
+    // FIX: only LOW vs HIGH was ever prevented from crossing -- BELL1 and
+    // BELL2 had no ordering constraint at all (could pass through each
+    // other, or past LOW/HIGH), which both looks wrong and kinks the curve
+    // backwards since it's drawn low->bell1->bell2->high in that fixed
+    // order regardless of where the nodes actually are. Each node is now
+    // clamped against its immediate neighbours only (low<bell1<bell2<high),
+    // which also transitively keeps low<high without needing a separate
+    // direct check.
     constexpr float minRatio = 1.05f;
 
     switch (draggingFilterHandle)
     {
         case FilterHandle::low:
         {
-            float highNow = (float) highFreqSlider.getValue();
-            newFreq = juce::jmin(newFreq, highNow / minRatio);
+            float bell1Now = (float) bell1FreqSlider.getValue();
+            newFreq = juce::jmin(newFreq, bell1Now / minRatio);
             lowFreqSlider.setValue(newFreq, juce::sendNotificationSync);
             int type = (int) audioProcessor.apvts.getRawParameterValue("EQ_LOW_TYPE")->load();
             if (type == 1) lowGainSlider.setValue(newGain, juce::sendNotificationSync); // Shelf: Y = gain
             break;
         }
-        case FilterHandle::high:
+        case FilterHandle::bell1:
         {
             float lowNow = (float) lowFreqSlider.getValue();
-            newFreq = juce::jmax(newFreq, lowNow * minRatio);
+            float bell2Now = (float) bell2FreqSlider.getValue();
+            // Defensive: if low and bell2 ever end up close enough that
+            // these bounds would invert, jlimit's min<=max precondition
+            // would be violated -- jmin/jmax guarantees valid ordering
+            // either way.
+            float lo = lowNow * minRatio, hi = bell2Now / minRatio;
+            newFreq = juce::jlimit(juce::jmin(lo, hi), juce::jmax(lo, hi), newFreq);
+            bell1FreqSlider.setValue(newFreq, juce::sendNotificationSync);
+            bell1GainSlider.setValue(newGain, juce::sendNotificationSync);
+            break;
+        }
+        case FilterHandle::bell2:
+        {
+            float bell1Now = (float) bell1FreqSlider.getValue();
+            float highNow = (float) highFreqSlider.getValue();
+            float lo = bell1Now * minRatio, hi = highNow / minRatio;
+            newFreq = juce::jlimit(juce::jmin(lo, hi), juce::jmax(lo, hi), newFreq);
+            bell2FreqSlider.setValue(newFreq, juce::sendNotificationSync);
+            bell2GainSlider.setValue(newGain, juce::sendNotificationSync);
+            break;
+        }
+        case FilterHandle::high:
+        {
+            float bell2Now = (float) bell2FreqSlider.getValue();
+            newFreq = juce::jmax(newFreq, bell2Now * minRatio);
             highFreqSlider.setValue(newFreq, juce::sendNotificationSync);
             int type = (int) audioProcessor.apvts.getRawParameterValue("EQ_HIGH_TYPE")->load();
             if (type == 1) highGainSlider.setValue(newGain, juce::sendNotificationSync);
             break;
         }
-        case FilterHandle::bell1:
-            bell1FreqSlider.setValue(newFreq, juce::sendNotificationSync);
-            bell1GainSlider.setValue(newGain, juce::sendNotificationSync);
-            break;
-        case FilterHandle::bell2:
-            bell2FreqSlider.setValue(newFreq, juce::sendNotificationSync);
-            bell2GainSlider.setValue(newGain, juce::sendNotificationSync);
-            break;
         default: break;
     }
 
@@ -740,11 +761,23 @@ void HomeDistoAudioProcessorEditor::drawTrackedText(juce::Graphics& g, const juc
     g.setFont(font);
     if (text.isEmpty()) return;
 
-    float naturalWidth = (float) juce::GlyphArrangement::getStringWidthInt(font, text);
+    // FIX: this previously measured the whole string's width in one call,
+    // then advanced character-by-character using EACH character's width
+    // measured in isolation. Those two numbers don't actually agree --
+    // measuring a glyph on its own (no kerning context) gives a different
+    // width than measuring it as part of a string -- so the drawn total
+    // silently overshot the target width. Summing the same per-character
+    // measurements used for drawing guarantees the two totals match.
+    juce::Array<float> charWidths;
+    float naturalWidth = 0.0f;
+    for (int i = 0; i < text.length(); ++i)
+    {
+        float w = (float) juce::GlyphArrangement::getStringWidthInt(font, text.substring(i, i + 1));
+        charWidths.add(w);
+        naturalWidth += w;
+    }
+
     int numGaps = text.length() - 1;
-    // Extra space distributed evenly between every adjacent pair of
-    // characters (including the literal space already in the string, so
-    // the word-gap grows proportionally too, not just letter-gaps).
     float extraPerGap = numGaps > 0 ? (targetWidth - naturalWidth) / (float) numGaps : 0.0f;
 
     float cx = x;
@@ -752,7 +785,7 @@ void HomeDistoAudioProcessorEditor::drawTrackedText(juce::Graphics& g, const juc
     {
         juce::String ch = text.substring(i, i + 1);
         g.drawText(ch, (int) cx, (int) y, 24, (int) height, juce::Justification::centredLeft);
-        cx += (float) juce::GlyphArrangement::getStringWidthInt(font, ch) + extraPerGap;
+        cx += charWidths[i] + extraPerGap;
     }
 }
 
@@ -886,6 +919,28 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     auto highPt  = highHandlePos();
     int lowType  = (int) audioProcessor.apvts.getRawParameterValue("EQ_LOW_TYPE")->load();
     int highType = (int) audioProcessor.apvts.getRawParameterValue("EQ_HIGH_TYPE")->load();
+
+    // NEW: faint inset border around the graph area so it reads as a
+    // distinct "scope" panel rather than just floating in the card.
+    {
+        juce::Rectangle<float> scopeBounds(filterGraphLeft - 4.0f, filterGraphTopY - 4.0f,
+                                            (filterGraphRight - filterGraphLeft) + 8.0f,
+                                            (filterGraphBottomY - filterGraphTopY) + 8.0f);
+        g.setColour(juce::Colours::black.withAlpha(0.15f));
+        g.fillRoundedRectangle(scopeBounds, 4.0f);
+        g.setColour(juce::Colours::black.withAlpha(0.25f));
+        g.drawRoundedRectangle(scopeBounds, 4.0f, 1.0f);
+    }
+
+    // NEW: faint frequency reference gridlines at 100 Hz / 1 kHz / 10 kHz --
+    // a small, standard EQ-plugin detail, kept deliberately subtle (very
+    // low alpha, no labels) so it reads as texture rather than clutter.
+    g.setColour(juce::Colours::black.withAlpha(0.08f));
+    for (float refHz : { 100.0f, 1000.0f, 10000.0f })
+    {
+        float gx = freqToX(refHz);
+        g.drawLine(gx, filterGraphTopY, gx, filterGraphBottomY, 1.0f);
+    }
 
     // 0 dB reference line.
     g.setColour(juce::Colours::black.withAlpha(0.2f));
