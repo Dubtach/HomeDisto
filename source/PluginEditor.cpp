@@ -489,6 +489,18 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     addAndMakeVisible(eqLockButton);
     eqLockButton.onClick = [this] { audioProcessor.lockEQ.store(eqLockButton.getToggleState()); };
 
+    // FIX: this is the actual "loses lock state on hide/reopen" bug. The
+    // processor (and its lockOutput/lockMix/lockEQ atomics) survives the
+    // editor being closed and reopened -- only the editor component itself
+    // gets destroyed and recreated. But these buttons never read back the
+    // processor's current values on construction, so a brand new editor
+    // always started them looking unlocked regardless of what they
+    // actually were -- and clicking one to "re-lock" it would actually
+    // toggle it OFF, since it was never really off to begin with.
+    outputLockButton.setToggleState(audioProcessor.lockOutput.load(), juce::dontSendNotification);
+    mixLockButton.setToggleState(audioProcessor.lockMix.load(), juce::dontSendNotification);
+    eqLockButton.setToggleState(audioProcessor.lockEQ.load(), juce::dontSendNotification);
+
     autoToggle.setButtonText("AUTO");
     autoToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFFFF007F)); 
     autoToggle.setTooltip("Auto Gain: DRIVE/TONE/PUNCH/MODE automatically nudge OUTPUT to keep loudness steady");
@@ -1116,10 +1128,21 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 
     juce::Path eqCurve;
 
+    // FIX: when LOW sits at its minimum (20 Hz, i.e. lowPt.x already equals
+    // filterGraphLeft) or HIGH at its maximum (20000 Hz, highPt.x equals
+    // filterGraphRight), the dive-to-floor control point below (offset by
+    // cornerOffset from the node) landed OUTSIDE the graph's left/right
+    // bounds entirely -- the curve doesn't just look "weird" at the edge,
+    // it actually pokes past the box. Clamping the control point's X to
+    // the graph bounds keeps the whole curve contained regardless of where
+    // the nodes are.
+    float lowControlX = juce::jmax(filterGraphLeft, lowPt.x - cornerOffset);
+    float highControlX = juce::jmin(filterGraphRight, highPt.x + cornerOffset);
+
     if (lowType == 0) // Cut: dive to the floor left of the node
     {
         eqCurve.startNewSubPath(filterGraphLeft, filterGraphBottomY);
-        eqCurve.cubicTo(lowPt.x - cornerOffset, filterGraphBottomY, lowPt.x - cornerOffset, lowPt.y, lowPt.x, lowPt.y);
+        eqCurve.cubicTo(lowControlX, filterGraphBottomY, lowControlX, lowPt.y, lowPt.x, lowPt.y);
     }
     else // Shelf: approach the node's gain level smoothly
     {
@@ -1132,7 +1155,7 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     eqCurve.cubicTo((bell2Pt.x + highPt.x) * 0.5f, bell2Pt.y, (bell2Pt.x + highPt.x) * 0.5f, highPt.y, highPt.x, highPt.y);
 
     if (highType == 0) // Cut: dive to the floor right of the node
-        eqCurve.cubicTo(highPt.x + cornerOffset, highPt.y, highPt.x + cornerOffset, filterGraphBottomY, filterGraphRight, filterGraphBottomY);
+        eqCurve.cubicTo(highControlX, highPt.y, highControlX, filterGraphBottomY, filterGraphRight, filterGraphBottomY);
     else // Shelf
         eqCurve.lineTo(filterGraphRight, highPt.y);
 

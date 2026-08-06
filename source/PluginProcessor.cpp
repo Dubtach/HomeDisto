@@ -714,6 +714,19 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
 
 void HomeDistoAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
+    // FIX: lockOutput/lockMix/lockEQ were plain in-memory atomics with no
+    // persistence at all -- they survive the editor being closed/reopened
+    // (the processor itself stays alive for that), but a real session
+    // save/close/reopen, or any host that reconstructs the processor,
+    // silently lost them. They're intentionally NOT APVTS parameters (a
+    // host shouldn't be able to automate "lock this knob"), but they still
+    // need to be part of the saved state -- stored as plain custom
+    // properties directly on the same ValueTree, so they ride along with
+    // everything else through copyState()/replaceState().
+    apvts.state.setProperty("lockOutput", lockOutput.load(), nullptr);
+    apvts.state.setProperty("lockMix", lockMix.load(), nullptr);
+    apvts.state.setProperty("lockEQ", lockEQ.load(), nullptr);
+
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml (state.createXml());
     copyXmlToBinary (*xml, destData);
@@ -736,9 +749,19 @@ void HomeDistoAudioProcessor::setStateInformation (const void* data, int sizeInB
         // actual replaceState() call needs to be deferred.
         juce::ValueTree newState = juce::ValueTree::fromXml (*xmlState);
 
-        juce::MessageManager::callAsync ([this, newState]() mutable
+        // Read the lock flags now (cheap, thread-safe -- just reading
+        // properties off a standalone ValueTree), defaulting to off for
+        // older saves made before this existed.
+        bool newLockOutput = newState.hasProperty("lockOutput") && (bool) newState.getProperty("lockOutput");
+        bool newLockMix    = newState.hasProperty("lockMix")    && (bool) newState.getProperty("lockMix");
+        bool newLockEQ     = newState.hasProperty("lockEQ")     && (bool) newState.getProperty("lockEQ");
+
+        juce::MessageManager::callAsync ([this, newState, newLockOutput, newLockMix, newLockEQ]() mutable
         {
             apvts.replaceState (newState);
+            lockOutput.store(newLockOutput);
+            lockMix.store(newLockMix);
+            lockEQ.store(newLockEQ);
         });
     }
 }
