@@ -171,6 +171,63 @@ public:
             return;
         }
 
+        // NEW: same lock icon as above, but tinted to match the EQ card's
+        // own green accent instead of the cyan used elsewhere -- kept as a
+        // separate name rather than changing "LOCK" itself, so the
+        // existing OUTPUT/MIX locks are untouched.
+        if (button.getName() == "LOCK_EQ")
+        {
+            bool locked = button.getToggleState();
+            auto cX = bounds.getCentreX();
+            auto cY = bounds.getCentreY() + 1.0f;
+
+            g.setColour(juce::Colours::black.withAlpha(shouldDrawButtonAsHighlighted ? 0.35f : 0.2f));
+            g.fillEllipse(bounds.reduced(1.0f));
+
+            juce::Colour iconColour = locked
+                ? juce::Colour(0xFF00FF87)
+                : juce::Colours::white.withAlpha(shouldDrawButtonAsHighlighted ? 0.75f : 0.45f);
+            g.setColour(iconColour);
+
+            juce::Path shackle;
+            shackle.addCentredArc(cX, cY - 3.5f, 3.0f, 3.0f, 0.0f,
+                                   juce::MathConstants<float>::pi * 1.5f,
+                                   juce::MathConstants<float>::pi * 2.5f, true);
+            g.strokePath(shackle, juce::PathStrokeType(1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.fillRoundedRectangle(cX - 3.5f, cY - 1.0f, 7.0f, 5.5f, 1.0f);
+            return;
+        }
+
+        // NEW: reset icon (circular arrow) for the EQ's "flatten to
+        // neutral" button.
+        if (button.getName() == "RESET_EQ")
+        {
+            auto cX = bounds.getCentreX();
+            auto cY = bounds.getCentreY();
+
+            g.setColour(juce::Colours::black.withAlpha(shouldDrawButtonAsHighlighted ? 0.35f : 0.2f));
+            g.fillEllipse(bounds.reduced(1.0f));
+
+            g.setColour(juce::Colours::white.withAlpha(shouldDrawButtonAsHighlighted ? 0.85f : 0.55f));
+            juce::Path arc;
+            float r = 4.5f;
+            arc.addCentredArc(cX, cY, r, r, 0.0f,
+                               juce::MathConstants<float>::pi * 0.25f,
+                               juce::MathConstants<float>::pi * 1.85f, true);
+            g.strokePath(arc, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+            // arrowhead at the arc's leading end
+            float headAngle = juce::MathConstants<float>::pi * 0.25f;
+            juce::Point<float> tip(cX + r * std::sin(headAngle), cY - r * std::cos(headAngle));
+            juce::Path head;
+            head.startNewSubPath(tip.x - 3.0f, tip.y - 1.0f);
+            head.lineTo(tip.x + 1.5f, tip.y - 2.5f);
+            head.lineTo(tip.x + 1.0f, tip.y + 2.0f);
+            head.closeSubPath();
+            g.fillPath(head);
+            return;
+        }
+
         if (button.getName() == "SAVE" || button.getName() == "SETTINGS" || button.getName() == "BYPASS")
         {
             g.setColour(shouldDrawButtonAsHighlighted ? juce::Colour(0xFF2A2A30) : juce::Colour(0xFF161618));
@@ -245,7 +302,7 @@ public:
 
     void drawButtonText (juce::Graphics& g, juce::TextButton& button, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
     {
-        if (button.getName() == "SAVE" || button.getName() == "SETTINGS" || button.getName() == "BYPASS" || button.getName() == "LOCK") return;
+        if (button.getName() == "SAVE" || button.getName() == "SETTINGS" || button.getName() == "BYPASS" || button.getName() == "LOCK" || button.getName() == "LOCK_EQ" || button.getName() == "RESET_EQ") return;
 
         if (button.getName() == "SLOPE_BTN")
         {
@@ -455,6 +512,13 @@ private:
     HomeDistoAudioProcessor& audioProcessor;
     MinimalistSynthLookAndFeel synthLaf;
 
+    // NEW: AUTO reworked into a UI-layer "linked knobs" feature -- see
+    // applyAutoGainCompensation() in the .cpp for the full explanation.
+    float lastAutoCompDb = 0.0f;
+    float computeAutoCompDb() const;
+    void recalibrateAutoBaseline();
+    void applyAutoGainCompensation();
+
     juce::TextButton presetMenuButton;
     juce::TextButton presetUpButton;
     juce::TextButton presetDownButton;
@@ -478,6 +542,10 @@ private:
     // "the sound" a host should automate or save -- it's a workflow toggle.
     juce::TextButton outputLockButton;
     juce::TextButton mixLockButton;
+    // NEW: EQ reset (flattens all 4 bands to neutral) and EQ lock (like
+    // outputLockButton/mixLockButton, but for the whole EQ across presets).
+    juce::TextButton eqResetButton;
+    juce::TextButton eqLockButton;
     
     juce::TextButton modeButtons[6];
     juce::StringArray modeNames = { "PUNCH", "TUBE", "TAPE", "DIGITAL", "CRUNCH", "FUZZ" };
@@ -502,8 +570,12 @@ private:
     // shelf/bell nodes and for drawing the cut-mode roll-off shape.
     static constexpr float filterGraphLeft = 35.0f;
     static constexpr float filterGraphRight = 235.0f;
-    static constexpr float filterGraphTopY = 320.0f;    // +18 dB
-    static constexpr float filterGraphBottomY = 384.0f; // -18 dB (also the cut-mode floor)
+    // FIX: the graph (and its inset scope border) was clipping right against
+    // the card's bottom edge, especially visible on a CUT-mode curve diving
+    // all the way to filterGraphBottomY. Moved up a few pixels for
+    // breathing room.
+    static constexpr float filterGraphTopY = 316.0f;    // +18 dB
+    static constexpr float filterGraphBottomY = 378.0f; // -18 dB (also the cut-mode floor)
     static constexpr float filterGraphMidY = (filterGraphTopY + filterGraphBottomY) * 0.5f; // 0 dB
 
     float freqToX(float hz) const;

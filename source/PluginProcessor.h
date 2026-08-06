@@ -52,6 +52,10 @@ public:
     // from UI callbacks), so plain std::atomic<bool> is sufficient here.
     std::atomic<bool> lockOutput { false };
     std::atomic<bool> lockMix { false };
+    // NEW: locks the entire 4-band EQ (all 12 params: LOW freq/type/gain,
+    // BELL1/BELL2 freq/gain/Q, HIGH freq/type/gain) across preset changes,
+    // same idea as lockOutput/lockMix above.
+    std::atomic<bool> lockEQ { false };
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameters();
@@ -100,7 +104,13 @@ private:
     juce::SmoothedValue<float> smoothOut;
     juce::SmoothedValue<float> smoothMix;
     juce::SmoothedValue<float> smoothPunch;
-    juce::SmoothedValue<float> autoGainFactor;
+
+    // NEW: mode-switch declick. See processBlock for why an abrupt curve
+    // switch (especially into/out of FUZZ) clicks, and why a short
+    // mute-and-refade around the switch instant fixes it.
+    juce::SmoothedValue<float> modeSwitchGain;
+    int lastModeForClickGuard = -1;
+    juce::Array<float> modeSwitchEnvBuffer;
 
     // NEW: block-rate one-pole smoothing for every EQ band's freq/gain/Q --
     // same reasoning as before (a fast drag/automation ramp could otherwise

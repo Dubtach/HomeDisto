@@ -129,9 +129,13 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     smoothOut.reset(sampleRate, 0.02);
     smoothMix.reset(sampleRate, 0.02);
     smoothPunch.reset(sampleRate, 0.02);
+
+    // NEW: fast ~8ms ramp -- short enough to be inaudible as a fade, long
+    // enough to smoothly cover the discontinuity when MODE changes.
+    modeSwitchGain.reset(sampleRate, 0.008);
+    modeSwitchGain.setCurrentAndTargetValue(1.0f);
+    lastModeForClickGuard = -1;
     
-    autoGainFactor.reset(sampleRate, 0.05);
-    autoGainFactor.setCurrentAndTargetValue(1.0f);
 
     // NEW: seed all the block-rate EQ smoothers from the actual current
     // parameter values, so the very first block after load doesn't ramp in
@@ -189,6 +193,7 @@ void HomeDistoAudioProcessor::ensureCapacityFor(int numSamples)
 
     driveEnvBuffer.resize(preparedBlockSize);
     punchEnvBuffer.resize(preparedBlockSize);
+    modeSwitchEnvBuffer.resize(preparedBlockSize);
 }
 
 void HomeDistoAudioProcessor::releaseResources() {}
@@ -457,13 +462,13 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         bell2Filter.reset();
     }
 
-    // Measure inRMS *after* sanitation to guarantee it receives finite numbers
-    float inRMS = 0.0f;
-    if (totalNumOutputChannels > 0) {
-        for (int ch = 0; ch < totalNumOutputChannels; ++ch)
-            inRMS += buffer.getRMSLevel(ch, 0, numSamples);
-        inRMS /= (float)totalNumOutputChannels;
-    }
+    // REDESIGNED: AUTO used to be RMS-based makeup gain computed here on
+    // the audio thread (measure input RMS, measure output RMS after
+    // distortion, apply the ratio as smoothed gain). That's been removed
+    // entirely -- AUTO is now a UI-layer feature that automatically moves
+    // the OUTPUT knob in response to DRIVE/TONE/PUNCH/MODE changes (see
+    // HomeDistoAudioProcessorEditor::applyAutoGainCompensation). The audio
+    // thread no longer does anything for AUTO at all.
 
     // --- Waveshaping stage, run oversampled to avoid aliasing ---
     // FIX: previously this ran directly at the project sample rate, which
@@ -482,13 +487,30 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         lastHqState = hqOn;
     }
 
-    // Pre-compute the smoothed DRIVE/PUNCH envelopes at block rate; these get
-    // held across however many oversampled sub-samples correspond to each
-    // original sample.
+    // FIX: mode switches had zero crossfade -- the waveshaper would jump
+    // straight from one curve to a completely different one on the very
+    // next sample. Most curves output ~0 for ~0 input, but FUZZ adds a DC
+    // bias (x + 0.35) before saturating, so it does NOT output ~0 near
+    // silence -- switching into or out of FUZZ is exactly the case with
+    // the biggest step discontinuity, which is why that one clicked loudest.
+    // Rather than crossfading two entire curves (expensive, fiddly), a
+    // short mute-and-refade around the switch instant hides the
+    // discontinuity in near-silence instead of letting it click through.
+    if (mode != lastModeForClickGuard)
+    {
+        modeSwitchGain.setCurrentAndTargetValue(0.0f);
+        modeSwitchGain.setTargetValue(1.0f);
+        lastModeForClickGuard = mode;
+    }
+
+    // Pre-compute the smoothed DRIVE/PUNCH/mode-switch envelopes at block
+    // rate; these get held across however many oversampled sub-samples
+    // correspond to each original sample.
     for (int sample = 0; sample < numSamples; ++sample)
     {
         driveEnvBuffer.set(sample, smoothDrive.getNextValue());
         punchEnvBuffer.set(sample, smoothPunch.getNextValue());
+        modeSwitchEnvBuffer.set(sample, modeSwitchGain.getNextValue());
     }
 
     auto oversampledBlock = activeOversampling.processSamplesUp(block);
@@ -501,6 +523,7 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         int origIndex = juce::jlimit(0, numSamples - 1, (int) (sample / (size_t) factor));
         float currentDrive = driveEnvBuffer[origIndex];
         float currentPunch = punchEnvBuffer[origIndex];
+        float currentSwitchGain = modeSwitchEnvBuffer[origIndex];
 
         for (size_t channel = 0; channel < numUpChannels; ++channel)
         {
@@ -612,6 +635,11 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
             // over completely.
             out = juce::jlimit(-2.0f, 2.0f, out);
 
+            // Mask the mode-switch discontinuity: ~1 (inaudible) during
+            // normal playback, briefly dips to 0 and ramps back up right at
+            // the instant MODE changes.
+            out *= currentSwitchGain;
+
             channelData[sample] = out;
         }
     }
@@ -643,23 +671,6 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     }
     if (wetBlewUp) toneFilter.reset();
 
-    float outRMS = 0.0f;
-    if (totalNumOutputChannels > 0) {
-        for (int ch = 0; ch < totalNumOutputChannels; ++ch)
-            outRMS += buffer.getRMSLevel(ch, 0, numSamples);
-        outRMS /= (float)totalNumOutputChannels;
-    }
-
-    // FIX: Hard-check RMS for valid floats to ensure smoother targets never inherit NaN/Inf targets
-    bool autoGainActive = apvts.getRawParameterValue("AUTO")->load() > 0.5f;
-    if (autoGainActive && outRMS > 0.0001f && inRMS > 0.0001f && std::isfinite(outRMS) && std::isfinite(inRMS)) {
-        // Clamp gain scaling to a strict +/- 24dB threshold
-        float target = juce::jlimit(0.063f, 15.8f, inRMS / outRMS); 
-        autoGainFactor.setTargetValue(target);
-    } else {
-        autoGainFactor.setTargetValue(1.0f);
-    }
-
     auto dryPointers = dryBuffer.getArrayOfReadPointers();
     auto writePointers = buffer.getArrayOfWritePointers();
 
@@ -667,7 +678,6 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     {
         float currentMix = smoothMix.getNextValue();
         float currentOut = smoothOut.getNextValue();
-        float currentAutoGain = autoGainFactor.getNextValue();
 
         for (int channel = 0; channel < totalNumOutputChannels; ++channel)
         {
@@ -678,7 +688,7 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
             // shelves/bell bands -- see the header comment above the filter
             // members). At MIX=1 you hear the fully EQ'd + distorted
             // signal; at MIX=0 the literal unprocessed original.
-            float wetSignal = writePointers[channel][sample] * currentAutoGain;
+            float wetSignal = writePointers[channel][sample];
             float drySignal = dryPointers[channel][sample];
             
             // Absolute final safety net: intercept rogue values immediately prior to host output
@@ -799,10 +809,20 @@ void HomeDistoAudioProcessor::loadPreset(const juce::File& file)
         
         if (xmlState != nullptr && xmlState->hasTagName(apvts.state.getType()))
         {
-            // NEW: capture the current OUT/MIX values before the preset
+            // NEW: capture the current OUT/MIX/EQ values before the preset
             // overwrites them, so locked knobs can be restored afterward.
             float savedOutDb = apvts.getRawParameterValue("OUT")->load();
             float savedMix   = apvts.getRawParameterValue("MIX")->load();
+
+            static const char* eqParamIDs[] = {
+                "EQ_LOW_FREQ", "EQ_LOW_TYPE", "EQ_LOW_GAIN",
+                "EQ_BELL1_FREQ", "EQ_BELL1_GAIN", "EQ_BELL1_Q",
+                "EQ_BELL2_FREQ", "EQ_BELL2_GAIN", "EQ_BELL2_Q",
+                "EQ_HIGH_FREQ", "EQ_HIGH_TYPE", "EQ_HIGH_GAIN"
+            };
+            float savedEq[12];
+            for (int i = 0; i < 12; ++i)
+                savedEq[i] = apvts.getRawParameterValue(eqParamIDs[i])->load();
 
             apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
             currentPresetFile = file;
@@ -814,6 +834,13 @@ void HomeDistoAudioProcessor::loadPreset(const juce::File& file)
             if (lockMix.load())
                 if (auto* p = apvts.getParameter("MIX"))
                     p->setValueNotifyingHost(p->convertTo0to1(savedMix));
+
+            if (lockEQ.load())
+            {
+                for (int i = 0; i < 12; ++i)
+                    if (auto* p = apvts.getParameter(eqParamIDs[i]))
+                        p->setValueNotifyingHost(p->convertTo0to1(savedEq[i]));
+            }
         }
     }
 }

@@ -5,6 +5,31 @@
 // NEW: preset browser content, replacing the plain native PopupMenu with
 // something that actually matches the plugin's look. Owned by the
 // CallOutBox that shows it.
+// NEW: preset rows previously rendered with JUCE's stock default TextButton
+// look (the browser doesn't share the main plugin's custom LookAndFeel),
+// which centres button text -- fine for a single word, but reads oddly for
+// a list of preset names. This gives rows proper left-aligned, list-style
+// text instead.
+class PresetRowLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    void drawButtonBackground(juce::Graphics& g, juce::Button& button, const juce::Colour&,
+                               bool shouldDrawButtonAsHighlighted, bool) override
+    {
+        auto bounds = button.getLocalBounds().toFloat();
+        auto base = button.findColour(juce::TextButton::buttonColourId);
+        g.setColour(shouldDrawButtonAsHighlighted ? base.brighter(0.25f) : base);
+        g.fillRoundedRectangle(bounds, 3.0f);
+    }
+
+    void drawButtonText(juce::Graphics& g, juce::TextButton& button, bool, bool) override
+    {
+        g.setFont(juce::FontOptions(12.0f));
+        g.setColour(button.findColour(juce::TextButton::textColourOffId));
+        g.drawText(button.getButtonText(), button.getLocalBounds().reduced(10, 0), juce::Justification::centredLeft);
+    }
+};
+
 class PresetBrowserPanel : public juce::Component
 {
 public:
@@ -41,6 +66,7 @@ public:
                 defaultButton.setButtonText("DEFAULT (Quick Start)");
                 defaultButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF00FF87).withAlpha(0.14f));
                 defaultButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xFF00FF87));
+                defaultButton.setLookAndFeel(&rowLnf);
                 defaultButton.onClick = [this, f] {
                     processor.loadPreset(f);
                     editor.updatePresetName();
@@ -74,6 +100,7 @@ public:
                 btn->setColour(juce::TextButton::buttonColourId, isActive ? juce::Colour(0xFF00FF87).withAlpha(0.18f) : juce::Colour(0xFF1A1A1E));
                 btn->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFF00FF87).withAlpha(0.25f));
                 btn->setColour(juce::TextButton::textColourOffId, isActive ? juce::Colour(0xFF00FF87) : juce::Colours::white.withAlpha(0.85f));
+                btn->setLookAndFeel(&rowLnf);
                 btn->onClick = [this, f] {
                     processor.loadPreset(f);
                     editor.updatePresetName();
@@ -215,6 +242,9 @@ private:
 
     HomeDistoAudioProcessorEditor& editor;
     HomeDistoAudioProcessor& processor;
+    // Declared before the buttons that use it, so it's destroyed last --
+    // a LookAndFeel must outlive any component still pointing at it.
+    PresetRowLookAndFeel rowLnf;
     juce::Label titleLabel;
     juce::TextEditor searchBox;
     juce::TextButton defaultButton;
@@ -427,8 +457,41 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     addAndMakeVisible(mixLockButton);
     mixLockButton.onClick = [this] { audioProcessor.lockMix.store(mixLockButton.getToggleState()); };
 
+    // NEW: EQ reset -- flattens all 4 bands back to neutral (LOW/HIGH set
+    // to Cut at the extreme edges of their range, where a cut is
+    // inaudible; both bells at 0 dB gain), i.e. a flat line across the
+    // whole graph.
+    eqResetButton.setName("RESET_EQ");
+    eqResetButton.setTooltip("Reset EQ to flat");
+    addAndMakeVisible(eqResetButton);
+    eqResetButton.onClick = [this] {
+        auto& ap = audioProcessor.apvts;
+        auto setP = [&ap](const juce::String& id, float normalised) {
+            if (auto* p = ap.getParameter(id)) p->setValueNotifyingHost(normalised);
+        };
+        // Cut/Shelf choice params: normalised 0 = Cut.
+        setP("EQ_LOW_TYPE", 0.0f);
+        setP("EQ_HIGH_TYPE", 0.0f);
+        if (auto* p = ap.getParameter("EQ_LOW_FREQ"))  p->setValueNotifyingHost(p->convertTo0to1(20.0f));
+        if (auto* p = ap.getParameter("EQ_LOW_GAIN"))  p->setValueNotifyingHost(p->convertTo0to1(0.0f));
+        if (auto* p = ap.getParameter("EQ_HIGH_FREQ")) p->setValueNotifyingHost(p->convertTo0to1(20000.0f));
+        if (auto* p = ap.getParameter("EQ_HIGH_GAIN")) p->setValueNotifyingHost(p->convertTo0to1(0.0f));
+        if (auto* p = ap.getParameter("EQ_BELL1_GAIN")) p->setValueNotifyingHost(p->convertTo0to1(0.0f));
+        if (auto* p = ap.getParameter("EQ_BELL2_GAIN")) p->setValueNotifyingHost(p->convertTo0to1(0.0f));
+        repaint();
+    };
+
+    // NEW: EQ lock -- same idea as the OUTPUT/MIX locks, but for the whole
+    // EQ (all 4 nodes) across preset changes.
+    eqLockButton.setName("LOCK_EQ");
+    eqLockButton.setClickingTogglesState(true);
+    eqLockButton.setTooltip("Lock EQ: presets won't change these nodes");
+    addAndMakeVisible(eqLockButton);
+    eqLockButton.onClick = [this] { audioProcessor.lockEQ.store(eqLockButton.getToggleState()); };
+
     autoToggle.setButtonText("AUTO");
     autoToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFFFF007F)); 
+    autoToggle.setTooltip("Auto Gain: DRIVE/TONE/PUNCH/MODE automatically nudge OUTPUT to keep loudness steady");
     addAndMakeVisible(autoToggle);
     autoAttach = std::make_unique<ButtonAttachment>(audioProcessor.apvts, "AUTO", autoToggle);
 
@@ -499,6 +562,16 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     audioProcessor.apvts.addParameterListener("SLOPE", this);
     int initialSlope = (int) audioProcessor.apvts.getRawParameterValue("SLOPE")->load();
     slopeButtons[juce::jlimit(0, 2, initialSlope)].setToggleState(true, juce::dontSendNotification);
+
+    // NEW: AUTO reworked entirely -- see applyAutoGainCompensation() for
+    // the full explanation. DRIVE/TONE/PUNCH need their own listeners here
+    // (MODE's is already registered above); AUTO itself needs one too, so
+    // toggling it on can (re)establish its baseline.
+    audioProcessor.apvts.addParameterListener("DRIVE", this);
+    audioProcessor.apvts.addParameterListener("TONE", this);
+    audioProcessor.apvts.addParameterListener("PUNCH", this);
+    audioProcessor.apvts.addParameterListener("AUTO", this);
+    recalibrateAutoBaseline();
 }
 
 HomeDistoAudioProcessorEditor::~HomeDistoAudioProcessorEditor()
@@ -507,6 +580,10 @@ HomeDistoAudioProcessorEditor::~HomeDistoAudioProcessorEditor()
     audioProcessor.apvts.removeParameterListener("SLOPE", this);
     audioProcessor.apvts.removeParameterListener("EQ_LOW_TYPE", this);
     audioProcessor.apvts.removeParameterListener("EQ_HIGH_TYPE", this);
+    audioProcessor.apvts.removeParameterListener("DRIVE", this);
+    audioProcessor.apvts.removeParameterListener("TONE", this);
+    audioProcessor.apvts.removeParameterListener("PUNCH", this);
+    audioProcessor.apvts.removeParameterListener("AUTO", this);
     setLookAndFeel(nullptr); 
 }
 
@@ -516,6 +593,17 @@ void HomeDistoAudioProcessorEditor::updatePresetName()
         presetMenuButton.setButtonText(audioProcessor.currentPresetFile.getFileNameWithoutExtension());
     else
         presetMenuButton.setButtonText("Select Preset...");
+
+    // NEW: recalibrate AUTO's baseline to the just-loaded preset's own
+    // DRIVE/TONE/PUNCH/MODE values, WITHOUT touching OUTPUT. Presets already
+    // carry their own carefully-tuned OUTPUT trim; without this, loading a
+    // preset would immediately fire AUTO's compensation logic (since
+    // replaceState() touches every parameter, including these) and shove
+    // OUTPUT away from what the preset intended. This runs synchronously,
+    // before the deferred parameterChanged callbacks triggered by the load
+    // get a chance to run, so by the time they do, there's no baseline
+    // mismatch left for them to "correct."
+    recalibrateAutoBaseline();
 }
 
 void HomeDistoAudioProcessorEditor::showPresetMenu()
@@ -534,6 +622,27 @@ void HomeDistoAudioProcessorEditor::parameterChanged (const juce::String& parame
     {
         juce::MessageManager::callAsync([this, newValue]() {
             modeButtons[(int)newValue].setToggleState(true, juce::dontSendNotification);
+            if (audioProcessor.apvts.getRawParameterValue("AUTO")->load() > 0.5f)
+                applyAutoGainCompensation();
+        });
+    }
+    else if (parameterID == "DRIVE" || parameterID == "TONE" || parameterID == "PUNCH")
+    {
+        // NEW: AUTO reworked -- these three (plus MODE above) are exactly
+        // the knobs whose loudness AUTO is meant to compensate for. See
+        // applyAutoGainCompensation() for the actual formula/reasoning.
+        juce::MessageManager::callAsync([this]() {
+            if (audioProcessor.apvts.getRawParameterValue("AUTO")->load() > 0.5f)
+                applyAutoGainCompensation();
+        });
+    }
+    else if (parameterID == "AUTO")
+    {
+        // Turning AUTO on shouldn't itself jump the OUTPUT knob -- just
+        // establish where "no compensation yet" is, starting from
+        // wherever DRIVE/TONE/PUNCH/MODE happen to already be.
+        juce::MessageManager::callAsync([this, newValue]() {
+            if (newValue > 0.5f) recalibrateAutoBaseline();
         });
     }
     else if (parameterID == "SLOPE")
@@ -548,6 +657,59 @@ void HomeDistoAudioProcessorEditor::parameterChanged (const juce::String& parame
     {
         juce::MessageManager::callAsync([this]() { repaint(); });
     }
+}
+
+// NEW: AUTO, reworked entirely. It used to be RMS-based makeup gain
+// computed on the audio thread; now it's a UI-layer "linked knobs"
+// convenience -- DRIVE/TONE/PUNCH/MODE each nudge the OUTPUT knob to keep
+// perceived loudness roughly steady, exactly the way a person would
+// manually compensate by ear, done automatically. When AUTO is off none of
+// this runs at all (checked at every call site above).
+//
+// Honest caveat: these coefficients are principled engineering estimates
+// (DRIVE dominates since it's the main gain-adding control but saturation
+// partially self-compresses so it isn't compensated 1:1; TONE and PUNCH
+// contribute much less since they don't add anywhere near as much energy;
+// each MODE gets a fixed offset based on how "hot" that curve tends to run,
+// reusing the same judgement calls made tuning the factory presets' OUTPUT
+// trims) -- not a measured loudness model, since there's no way to render
+// real audio through the DSP in this environment to verify by ear.
+float HomeDistoAudioProcessorEditor::computeAutoCompDb() const
+{
+    float driveDb = audioProcessor.apvts.getRawParameterValue("DRIVE")->load();
+    float toneDb = audioProcessor.apvts.getRawParameterValue("TONE")->load() * 6.0f;
+    float punch = audioProcessor.apvts.getRawParameterValue("PUNCH")->load();
+    int mode = juce::jlimit(0, 5, (int) audioProcessor.apvts.getRawParameterValue("MODE")->load());
+
+    // PUNCH, TUBE, TAPE, DIGITAL, CRUNCH, FUZZ
+    static const float modeOffsetDb[6] = { 0.0f, 0.0f, 0.5f, -1.5f, -0.5f, -2.0f };
+
+    return (-0.5f * driveDb) + (-0.15f * toneDb) + (-1.5f * punch) + modeOffsetDb[mode];
+}
+
+void HomeDistoAudioProcessorEditor::recalibrateAutoBaseline()
+{
+    lastAutoCompDb = computeAutoCompDb();
+}
+
+void HomeDistoAudioProcessorEditor::applyAutoGainCompensation()
+{
+    // Respect the OUTPUT lock -- locking means "presets and automatic
+    // changes alike leave this knob alone," not just presets.
+    if (audioProcessor.lockOutput.load())
+        return;
+
+    float newComp = computeAutoCompDb();
+    float delta = newComp - lastAutoCompDb;
+    lastAutoCompDb = newComp;
+    if (std::abs(delta) < 0.001f) return;
+
+    auto* outParam = audioProcessor.apvts.getParameter("OUT");
+    if (outParam == nullptr) return;
+
+    float currentOutDb = audioProcessor.apvts.getRawParameterValue("OUT")->load();
+    float newOutDb = juce::jlimit(-24.0f, 24.0f, currentOutDb + delta);
+    outParam->setValueNotifyingHost(outParam->convertTo0to1(newOutDb));
 }
 
 // --- Shared freq/gain <-> pixel mapping for the EQ graph -------------------
@@ -1130,6 +1292,11 @@ void HomeDistoAudioProcessorEditor::resized()
 
     // Slope buttons sit in their own centred row directly under the EQ
     // title. Bounds must match the slopeTrack rectangle drawn in paint().
+    // NEW: EQ reset/lock icons, top-right corner of the EQ card (title text
+    // is centred and short, so the corners are clear).
+    eqResetButton.setBounds(206, 269, 16, 16);
+    eqLockButton.setBounds(226, 269, 16, 16);
+
     for (int i = 0; i < 3; ++i)
         slopeButtons[i].setBounds(76 + i * 42, 291, 34, 16);
 
