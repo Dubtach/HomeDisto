@@ -44,7 +44,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout HomeDistoAudioProcessor::cre
         juce::StringArray{"PUNCH", "TUBE", "TAPE", "DIGITAL", "CRUNCH", "FUZZ"}, 0));
         
     params.push_back(std::make_unique<juce::AudioParameterFloat>("OUT", "Output", -24.0f, 24.0f, 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterBool>("AUTO", "Auto", false));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("AUTO", "Auto", true));
 
     // REDESIGNED: was a 2-knob focus-band filter (LOW_CUT/HIGH_CUT only).
     // Now a proper 4-band EQ: LOW and HIGH can each be a cut or a shelf,
@@ -75,7 +75,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout HomeDistoAudioProcessor::cre
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>("TONE", "Tone", -1.0f, 1.0f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("PUNCH", "Punch", 0.0f, 1.0f, 0.5f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("MIX", "Mix", 0.0f, 1.0f, 0.5f));
+    // FIX: default changed to 100% wet (was 50%) -- Decapitator-style
+    // "the effect IS the sound" default workflow. MIX still exists and
+    // still works normally if someone wants to blend it down; this only
+    // changes what the plugin defaults to and what the factory presets use.
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("MIX", "Mix", 0.0f, 1.0f, 1.0f));
 
     // HQ mode: switches the internal oversampling used for the distortion
     // stage from 2x to 4x, trading a little extra latency/CPU for cleaner

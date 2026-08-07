@@ -49,6 +49,23 @@ namespace FactoryPresets
             if (currentTree != nullptr)
                 setTreeParam(*currentTree, "MODE", modeIndex);
         };
+        // FIX: MIX is now always 100% (Decapitator-style -- the effect IS
+        // the sound, not a blend), so every preset's OUT trim needed
+        // recalculating: the old trims assumed each preset's own (often
+        // much lower) MIX amount diluting the wet signal, which no longer
+        // applies once wet is the only signal.
+        //
+        // Rather than re-estimating loudness by hand again, every OUT value
+        // below is computed from the exact same formula AUTO itself uses
+        // (see HomeDistoAudioProcessorEditor::computeAutoCompDb) applied to
+        // that preset's own DRIVE/TONE/PUNCH/MODE. This isn't just
+        // convenient -- it's self-consistent by construction: since AUTO is
+        // also on by default now, and recalibrates its baseline right after
+        // a preset loads (see recalibrateAutoBaseline()), a preset's stored
+        // OUT and AUTO's live baseline are mathematically identical the
+        // moment it loads. There's no jump between "what the preset baked
+        // in" and "what AUTO would compute live" because they're the same
+        // number by definition.
         auto setOut = [&](float outDb) { setParam("OUT", outDb); };
         auto setLow = [&](float freq, bool shelf, float gainDb) {
             setParam("EQ_LOW_FREQ", freq); setParam("EQ_LOW_TYPE", shelf ? 1.0f : 0.0f); setParam("EQ_LOW_GAIN", gainDb);
@@ -70,7 +87,7 @@ namespace FactoryPresets
         // ==========================================
         createDefault("0. Default", "Default", [&]() {
             setMode(0.0f); // PUNCH
-            setParam("DRIVE", 6.0f); setParam("MIX", 0.5f); setOut(0.0f);
+            setParam("DRIVE", 6.0f); setParam("MIX", 1.0f); setOut(-3.4f);
             setParam("TONE", 0.0f); setParam("PUNCH", 0.3f);
             setLow(80.0f, false, 0.0f);
             setBell1(400.0f, -1.0f, 0.8f);
@@ -87,7 +104,7 @@ namespace FactoryPresets
         // ==========================================
         createDefault("4. Guitars", "1. Classic Overdrive", [&]() {
             setMode(1.0f); // TUBE
-            setParam("DRIVE", 14.0f); setParam("MIX", 0.85f); setOut(-2.5f);
+            setParam("DRIVE", 14.0f); setParam("MIX", 1.0f); setOut(-7.6f);
             setParam("TONE", 0.15f); setParam("PUNCH", 0.3f);
             setLow(80.0f, false, 0.0f);
             setBell1(400.0f, -1.5f, 0.8f);
@@ -96,7 +113,7 @@ namespace FactoryPresets
         });
         createDefault("4. Guitars", "2. Heavy Chug", [&]() {
             setMode(4.0f); // CRUNCH
-            setParam("DRIVE", 18.0f); setParam("MIX", 0.9f); setOut(-3.5f);
+            setParam("DRIVE", 18.0f); setParam("MIX", 1.0f); setOut(-10.8f);
             setParam("TONE", 0.25f); setParam("PUNCH", 0.7f);
             setLow(100.0f, false, 0.0f);
             setBell1(250.0f, -2.0f, 0.8f);
@@ -105,7 +122,7 @@ namespace FactoryPresets
         });
         createDefault("4. Guitars", "3. Doom Fuzz", [&]() {
             setMode(5.0f); // FUZZ
-            setParam("DRIVE", 24.0f); setParam("MIX", 0.9f); setOut(-4.5f);
+            setParam("DRIVE", 24.0f); setParam("MIX", 1.0f); setOut(-14.9f);
             setParam("TONE", -0.3f); setParam("PUNCH", 0.8f);
             setLow(50.0f, true, 2.0f);
             setBell1(150.0f, 1.5f, 0.7f);
@@ -114,7 +131,7 @@ namespace FactoryPresets
         });
         createDefault("4. Guitars", "4. Screaming Lead", [&]() {
             setMode(0.0f); // PUNCH
-            setParam("DRIVE", 16.0f); setParam("MIX", 0.9f); setOut(-3.5f);
+            setParam("DRIVE", 16.0f); setParam("MIX", 1.0f); setOut(-9.1f);
             setParam("TONE", 0.4f); setParam("PUNCH", 0.5f);
             setLow(120.0f, false, 0.0f);
             setBell1(500.0f, -2.0f, 0.8f);
@@ -123,7 +140,7 @@ namespace FactoryPresets
         });
         createDefault("4. Guitars", "5. Tape Fuzz", [&]() {
             setMode(2.0f); // TAPE
-            setParam("DRIVE", 24.0f); setParam("MIX", 0.85f); setOut(-2.5f);
+            setParam("DRIVE", 24.0f); setParam("MIX", 1.0f); setOut(-11.7f);
             setParam("TONE", -0.1f); setParam("PUNCH", 0.2f);
             setLow(60.0f, false, 0.0f);
             setBell1(200.0f, 1.0f, 0.7f);
@@ -132,7 +149,7 @@ namespace FactoryPresets
         });
         createDefault("4. Guitars", "6. Blues Breaker", [&]() {
             setMode(1.0f); // TUBE
-            setParam("DRIVE", 10.0f); setParam("MIX", 0.7f); setOut(-1.5f);
+            setParam("DRIVE", 10.0f); setParam("MIX", 1.0f); setOut(-5.4f);
             setParam("TONE", 0.1f); setParam("PUNCH", 0.2f);
             setLow(90.0f, false, 0.0f);
             setBell1(800.0f, 1.0f, 0.9f);
@@ -141,7 +158,7 @@ namespace FactoryPresets
         });
         createDefault("4. Guitars", "7. Modern Djent", [&]() {
             setMode(3.0f); // DIGITAL
-            setParam("DRIVE", 16.0f); setParam("MIX", 0.85f); setOut(-3.0f);
+            setParam("DRIVE", 16.0f); setParam("MIX", 1.0f); setOut(-10.6f);
             setParam("TONE", 0.2f); setParam("PUNCH", 0.6f);
             setLow(100.0f, false, 0.0f);
             setBell1(300.0f, -2.0f, 0.8f);
@@ -150,7 +167,7 @@ namespace FactoryPresets
         });
         createDefault("4. Guitars", "8. Acoustic Warmth", [&]() {
             setMode(0.0f); // PUNCH
-            setParam("DRIVE", 2.0f); setParam("MIX", 0.2f); setOut(0.5f);
+            setParam("DRIVE", 2.0f); setParam("MIX", 1.0f); setOut(-1.1f);
             setParam("TONE", 0.1f); setParam("PUNCH", 0.0f);
             setLow(80.0f, false, 0.0f);
             setBell1(200.0f, 1.0f, 0.7f);
@@ -163,7 +180,7 @@ namespace FactoryPresets
         // ==========================================
         createDefault("1. Bass", "1. Modern Grunt", [&]() {
             setMode(0.0f); // PUNCH
-            setParam("DRIVE", 10.0f); setParam("MIX", 0.6f); setOut(-2.0f);
+            setParam("DRIVE", 10.0f); setParam("MIX", 1.0f); setOut(-6.3f);
             setParam("TONE", 0.1f); setParam("PUNCH", 0.8f);
             setLow(60.0f, true, 3.0f);
             setBell1(400.0f, -2.5f, 0.8f);
@@ -172,7 +189,7 @@ namespace FactoryPresets
         });
         createDefault("1. Bass", "2. Vintage Amp", [&]() {
             setMode(1.0f); // TUBE
-            setParam("DRIVE", 12.0f); setParam("MIX", 0.55f); setOut(-2.0f);
+            setParam("DRIVE", 12.0f); setParam("MIX", 1.0f); setOut(-6.3f);
             setParam("TONE", -0.2f); setParam("PUNCH", 0.3f);
             setLow(50.0f, true, 2.0f);
             setBell1(200.0f, 1.5f, 0.7f);
@@ -181,7 +198,7 @@ namespace FactoryPresets
         });
         createDefault("1. Bass", "3. Parallel Smash", [&]() {
             setMode(4.0f); // CRUNCH
-            setParam("DRIVE", 20.0f); setParam("MIX", 0.25f); setOut(-1.5f);
+            setParam("DRIVE", 20.0f); setParam("MIX", 1.0f); setOut(-12.2f);
             setParam("TONE", 0.2f); setParam("PUNCH", 1.0f);
             setLow(20.0f, false, 0.0f);
             setBell1(100.0f, 2.0f, 0.8f);
@@ -190,7 +207,7 @@ namespace FactoryPresets
         });
         createDefault("1. Bass", "4. Fuzz Sub", [&]() {
             setMode(5.0f); // FUZZ
-            setParam("DRIVE", 18.0f); setParam("MIX", 0.45f); setOut(-3.0f);
+            setParam("DRIVE", 18.0f); setParam("MIX", 1.0f); setOut(-10.8f);
             setParam("TONE", -0.4f); setParam("PUNCH", 0.1f);
             setLow(30.0f, true, 2.0f);
             setBell1(80.0f, 2.0f, 0.7f);
@@ -199,7 +216,7 @@ namespace FactoryPresets
         });
         createDefault("1. Bass", "5. Tube Exciter", [&]() {
             setMode(1.0f); // TUBE
-            setParam("DRIVE", 8.0f); setParam("MIX", 0.4f); setOut(-1.0f);
+            setParam("DRIVE", 8.0f); setParam("MIX", 1.0f); setOut(-4.6f);
             setParam("TONE", 0.3f); setParam("PUNCH", 0.2f);
             setLow(50.0f, false, 0.0f);
             setBell1(250.0f, 1.0f, 0.7f);
@@ -208,7 +225,7 @@ namespace FactoryPresets
         });
         createDefault("1. Bass", "6. Synth Reese", [&]() {
             setMode(5.0f); // FUZZ
-            setParam("DRIVE", 14.0f); setParam("MIX", 0.5f); setOut(-2.0f);
+            setParam("DRIVE", 14.0f); setParam("MIX", 1.0f); setOut(-9.4f);
             setParam("TONE", 0.0f); setParam("PUNCH", 0.3f);
             setLow(40.0f, true, 2.0f);
             setBell1(500.0f, -1.0f, 0.8f);
@@ -217,7 +234,7 @@ namespace FactoryPresets
         });
         createDefault("1. Bass", "7. Pick Bite", [&]() {
             setMode(4.0f); // CRUNCH
-            setParam("DRIVE", 12.0f); setParam("MIX", 0.55f); setOut(-1.5f);
+            setParam("DRIVE", 12.0f); setParam("MIX", 1.0f); setOut(-7.4f);
             setParam("TONE", 0.2f); setParam("PUNCH", 0.5f);
             setLow(50.0f, false, 0.0f);
             setBell1(200.0f, 1.0f, 0.7f);
@@ -226,7 +243,7 @@ namespace FactoryPresets
         });
         createDefault("1. Bass", "8. Sub Clean", [&]() {
             setMode(0.0f); // PUNCH
-            setParam("DRIVE", 2.0f); setParam("MIX", 0.15f); setOut(0.5f);
+            setParam("DRIVE", 2.0f); setParam("MIX", 1.0f); setOut(-1.0f);
             setParam("TONE", 0.0f); setParam("PUNCH", 0.0f);
             setLow(50.0f, true, 2.0f);
             setHigh(8000.0f, false, 0.0f);
@@ -237,7 +254,7 @@ namespace FactoryPresets
         // ==========================================
         createDefault("2. Drums", "1. Parallel Snap", [&]() {
             setMode(0.0f); // PUNCH
-            setParam("DRIVE", 18.0f); setParam("MIX", 0.25f); setOut(-1.0f);
+            setParam("DRIVE", 18.0f); setParam("MIX", 1.0f); setOut(-10.8f);
             setParam("TONE", 0.3f); setParam("PUNCH", 1.0f);
             setLow(20.0f, false, 0.0f);
             setBell1(150.0f, 2.0f, 0.8f);
@@ -246,7 +263,7 @@ namespace FactoryPresets
         });
         createDefault("2. Drums", "2. Bus Crush", [&]() {
             setMode(3.0f); // DIGITAL
-            setParam("DRIVE", 12.0f); setParam("MIX", 0.3f); setOut(-1.5f);
+            setParam("DRIVE", 12.0f); setParam("MIX", 1.0f); setOut(-8.9f);
             setParam("TONE", 0.1f); setParam("PUNCH", 0.9f);
             setLow(30.0f, false, 0.0f);
             setBell1(400.0f, -1.0f, 0.8f);
@@ -255,7 +272,7 @@ namespace FactoryPresets
         });
         createDefault("2. Drums", "3. Snare Crackifier", [&]() {
             setMode(4.0f); // CRUNCH
-            setParam("DRIVE", 10.0f); setParam("MIX", 0.4f); setOut(-1.0f);
+            setParam("DRIVE", 10.0f); setParam("MIX", 1.0f); setOut(-6.8f);
             setParam("TONE", 0.5f); setParam("PUNCH", 0.6f);
             setLow(150.0f, false, 0.0f);
             setBell1(250.0f, 2.0f, 0.8f);
@@ -264,7 +281,7 @@ namespace FactoryPresets
         });
         createDefault("2. Drums", "4. Kick Sub Maker", [&]() {
             setMode(1.0f); // TUBE
-            setParam("DRIVE", 6.0f); setParam("MIX", 0.4f); setOut(-2.0f);
+            setParam("DRIVE", 6.0f); setParam("MIX", 1.0f); setOut(-3.0f);
             setParam("TONE", -0.3f); setParam("PUNCH", 0.2f);
             setLow(45.0f, true, 4.0f);
             setBell1(80.0f, 2.0f, 0.7f);
@@ -273,7 +290,7 @@ namespace FactoryPresets
         });
         createDefault("2. Drums", "5. Breakbeat Trash", [&]() {
             setMode(5.0f); // FUZZ
-            setParam("DRIVE", 15.0f); setParam("MIX", 0.65f); setOut(-3.0f);
+            setParam("DRIVE", 15.0f); setParam("MIX", 1.0f); setOut(-10.3f);
             setParam("TONE", 0.2f); setParam("PUNCH", 0.4f);
             setLow(150.0f, false, 0.0f);
             setBell1(300.0f, 2.0f, 0.8f);
@@ -282,7 +299,7 @@ namespace FactoryPresets
         });
         createDefault("2. Drums", "6. Room Glue", [&]() {
             setMode(2.0f); // TAPE
-            setParam("DRIVE", 4.0f); setParam("MIX", 0.3f); setOut(0.5f);
+            setParam("DRIVE", 4.0f); setParam("MIX", 1.0f); setOut(-1.6f);
             setParam("TONE", -0.1f); setParam("PUNCH", 0.1f);
             setLow(40.0f, false, 0.0f);
             setBell1(150.0f, 1.0f, 0.7f);
@@ -291,7 +308,7 @@ namespace FactoryPresets
         });
         createDefault("2. Drums", "7. Hi-Hat Sizzle", [&]() {
             setMode(3.0f); // DIGITAL
-            setParam("DRIVE", 8.0f); setParam("MIX", 0.4f); setOut(-0.5f);
+            setParam("DRIVE", 8.0f); setParam("MIX", 1.0f); setOut(-6.3f);
             setParam("TONE", 0.4f); setParam("PUNCH", 0.3f);
             setLow(400.0f, false, 0.0f);
             setBell1(6000.0f, 2.0f, 1.0f);
@@ -300,7 +317,7 @@ namespace FactoryPresets
         });
         createDefault("2. Drums", "8. Tom Thump", [&]() {
             setMode(1.0f); // TUBE
-            setParam("DRIVE", 8.0f); setParam("MIX", 0.5f); setOut(-1.5f);
+            setParam("DRIVE", 8.0f); setParam("MIX", 1.0f); setOut(-4.5f);
             setParam("TONE", -0.1f); setParam("PUNCH", 0.4f);
             setLow(70.0f, true, 3.0f);
             setBell1(120.0f, 2.0f, 0.8f);
@@ -313,7 +330,7 @@ namespace FactoryPresets
         // ==========================================
         createDefault("3. Vocals", "1. Tube Presence", [&]() {
             setMode(1.0f); // TUBE
-            setParam("DRIVE", 4.5f); setParam("MIX", 0.4f); setOut(0.0f);
+            setParam("DRIVE", 4.5f); setParam("MIX", 1.0f); setOut(-2.6f);
             setParam("TONE", 0.2f); setParam("PUNCH", 0.1f);
             setLow(90.0f, false, 0.0f);
             setBell1(300.0f, -2.0f, 0.8f);
@@ -322,7 +339,7 @@ namespace FactoryPresets
         });
         createDefault("3. Vocals", "2. Saturation Air", [&]() {
             setMode(2.0f); // TAPE
-            setParam("DRIVE", 3.5f); setParam("MIX", 0.5f); setOut(0.0f);
+            setParam("DRIVE", 3.5f); setParam("MIX", 1.0f); setOut(-1.6f);
             setParam("TONE", 0.4f); setParam("PUNCH", 0.0f);
             setLow(95.0f, false, 0.0f);
             setBell1(250.0f, -1.5f, 0.8f);
@@ -331,7 +348,7 @@ namespace FactoryPresets
         });
         createDefault("3. Vocals", "3. Smooth Overdrive", [&]() {
             setMode(0.0f); // PUNCH
-            setParam("DRIVE", 6.0f); setParam("MIX", 0.45f); setOut(-0.5f);
+            setParam("DRIVE", 6.0f); setParam("MIX", 1.0f); setOut(-3.3f);
             setParam("TONE", -0.05f); setParam("PUNCH", 0.2f);
             setLow(100.0f, false, 0.0f);
             setBell1(350.0f, -2.0f, 0.8f);
@@ -340,7 +357,7 @@ namespace FactoryPresets
         });
         createDefault("3. Vocals", "4. Aggressive Rap", [&]() {
             setMode(3.0f); // DIGITAL
-            setParam("DRIVE", 8.0f); setParam("MIX", 0.35f); setOut(-1.5f);
+            setParam("DRIVE", 8.0f); setParam("MIX", 1.0f); setOut(-6.5f);
             setParam("TONE", 0.3f); setParam("PUNCH", 0.5f);
             setLow(80.0f, false, 0.0f);
             setBell1(1000.0f, 1.5f, 0.9f);
@@ -349,7 +366,7 @@ namespace FactoryPresets
         });
         createDefault("3. Vocals", "5. Lo-Fi Radio", [&]() {
             setMode(3.0f); // DIGITAL
-            setParam("DRIVE", 14.0f); setParam("MIX", 0.8f); setOut(-4.0f);
+            setParam("DRIVE", 14.0f); setParam("MIX", 1.0f); setOut(-8.7f);
             setParam("TONE", 0.1f); setParam("PUNCH", 0.1f);
             setLow(400.0f, false, 0.0f);
             setBell1(1500.0f, 3.0f, 1.6f);
@@ -358,7 +375,7 @@ namespace FactoryPresets
         });
         createDefault("3. Vocals", "6. Podcast Warmth", [&]() {
             setMode(2.0f); // TAPE
-            setParam("DRIVE", 3.0f); setParam("MIX", 0.3f); setOut(0.5f);
+            setParam("DRIVE", 3.0f); setParam("MIX", 1.0f); setOut(-1.1f);
             setParam("TONE", 0.1f); setParam("PUNCH", 0.0f);
             setLow(90.0f, false, 0.0f);
             setBell1(300.0f, -1.0f, 0.8f);
@@ -367,7 +384,7 @@ namespace FactoryPresets
         });
         createDefault("3. Vocals", "7. Telephone", [&]() {
             setMode(3.0f); // DIGITAL
-            setParam("DRIVE", 10.0f); setParam("MIX", 1.0f); setOut(-3.0f);
+            setParam("DRIVE", 10.0f); setParam("MIX", 1.0f); setOut(-6.8f);
             setParam("TONE", 0.0f); setParam("PUNCH", 0.2f);
             setLow(500.0f, false, 0.0f);
             setBell1(1200.0f, 3.0f, 1.5f);
@@ -376,7 +393,7 @@ namespace FactoryPresets
         });
         createDefault("3. Vocals", "8. Doubler Grit", [&]() {
             setMode(0.0f); // PUNCH
-            setParam("DRIVE", 5.0f); setParam("MIX", 0.35f); setOut(0.0f);
+            setParam("DRIVE", 5.0f); setParam("MIX", 1.0f); setOut(-2.9f);
             setParam("TONE", 0.1f); setParam("PUNCH", 0.2f);
             setLow(100.0f, false, 0.0f);
             setBell1(400.0f, -1.5f, 0.8f);
@@ -389,7 +406,7 @@ namespace FactoryPresets
         // ==========================================
         createDefault("5. Synths & FX", "1. Wavefold Lead", [&]() {
             setMode(4.0f); // CRUNCH
-            setParam("DRIVE", 15.0f); setParam("MIX", 0.8f); setOut(-3.0f);
+            setParam("DRIVE", 15.0f); setParam("MIX", 1.0f); setOut(-8.5f);
             setParam("TONE", 0.1f); setParam("PUNCH", 0.3f);
             setLow(60.0f, false, 0.0f);
             setBell1(300.0f, -1.0f, 0.8f);
@@ -398,7 +415,7 @@ namespace FactoryPresets
         });
         createDefault("5. Synths & FX", "2. Analog Warm Pad", [&]() {
             setMode(2.0f); // TAPE
-            setParam("DRIVE", 7.0f); setParam("MIX", 0.5f); setOut(-0.5f);
+            setParam("DRIVE", 7.0f); setParam("MIX", 1.0f); setOut(-2.9f);
             setParam("TONE", -0.15f); setParam("PUNCH", 0.0f);
             setLow(60.0f, true, 1.5f);
             setBell1(200.0f, 1.0f, 0.7f);
@@ -407,7 +424,7 @@ namespace FactoryPresets
         });
         createDefault("5. Synths & FX", "3. Acid Screamer", [&]() {
             setMode(5.0f); // FUZZ
-            setParam("DRIVE", 16.0f); setParam("MIX", 0.8f); setOut(-3.5f);
+            setParam("DRIVE", 16.0f); setParam("MIX", 1.0f); setOut(-11.5f);
             setParam("TONE", 0.5f); setParam("PUNCH", 0.7f);
             setLow(80.0f, false, 0.0f);
             setBell1(1000.0f, 2.0f, 2.0f);
@@ -416,7 +433,7 @@ namespace FactoryPresets
         });
         createDefault("5. Synths & FX", "4. 8-Bit Chiptune", [&]() {
             setMode(3.0f); // DIGITAL
-            setParam("DRIVE", 24.0f); setParam("MIX", 1.0f); setOut(-5.0f);
+            setParam("DRIVE", 24.0f); setParam("MIX", 1.0f); setOut(-15.7f);
             setParam("TONE", 0.8f); setParam("PUNCH", 1.0f);
             setLow(150.0f, false, 0.0f);
             setBell1(1500.0f, 2.0f, 1.2f);
@@ -425,7 +442,7 @@ namespace FactoryPresets
         });
         createDefault("5. Synths & FX", "5. Total Destruction", [&]() {
             setMode(5.0f); // FUZZ
-            setParam("DRIVE", 24.0f); setParam("MIX", 1.0f); setOut(-6.0f);
+            setParam("DRIVE", 24.0f); setParam("MIX", 1.0f); setOut(-14.8f);
             setParam("TONE", -0.8f); setParam("PUNCH", 1.0f);
             setLow(80.0f, true, 3.0f);
             setBell1(200.0f, 3.0f, 0.8f);
@@ -434,7 +451,7 @@ namespace FactoryPresets
         });
         createDefault("5. Synths & FX", "6. Bitcrush Chaos", [&]() {
             setMode(3.0f); // DIGITAL
-            setParam("DRIVE", 20.0f); setParam("MIX", 0.9f); setOut(-4.5f);
+            setParam("DRIVE", 20.0f); setParam("MIX", 1.0f); setOut(-12.7f);
             setParam("TONE", 0.3f); setParam("PUNCH", 0.6f);
             setLow(80.0f, false, 0.0f);
             setBell1(1000.0f, 2.0f, 1.0f);
@@ -443,7 +460,7 @@ namespace FactoryPresets
         });
         createDefault("5. Synths & FX", "7. Radio Static", [&]() {
             setMode(5.0f); // FUZZ
-            setParam("DRIVE", 20.0f); setParam("MIX", 0.6f); setOut(-3.5f);
+            setParam("DRIVE", 20.0f); setParam("MIX", 1.0f); setOut(-12.6f);
             setParam("TONE", 0.2f); setParam("PUNCH", 0.3f);
             setLow(300.0f, false, 0.0f);
             setBell1(1500.0f, 3.0f, 2.0f);
@@ -452,7 +469,7 @@ namespace FactoryPresets
         });
         createDefault("5. Synths & FX", "8. Supersaw Grind", [&]() {
             setMode(4.0f); // CRUNCH
-            setParam("DRIVE", 12.0f); setParam("MIX", 0.7f); setOut(-2.0f);
+            setParam("DRIVE", 12.0f); setParam("MIX", 1.0f); setOut(-7.2f);
             setParam("TONE", 0.15f); setParam("PUNCH", 0.4f);
             setLow(60.0f, false, 0.0f);
             setBell1(400.0f, -1.0f, 0.8f);
@@ -465,7 +482,7 @@ namespace FactoryPresets
         // ==========================================
         createDefault("6. Mastering & Bus", "1. Master Glue", [&]() {
             setMode(2.0f); // TAPE
-            setParam("DRIVE", 3.0f); setParam("MIX", 0.25f); setOut(1.0f);
+            setParam("DRIVE", 3.0f); setParam("MIX", 1.0f); setOut(-1.2f);
             setParam("TONE", 0.05f); setParam("PUNCH", 0.1f);
             setLow(25.0f, false, 0.0f);
             setBell1(300.0f, -1.5f, 0.7f);
@@ -474,7 +491,7 @@ namespace FactoryPresets
         });
         createDefault("6. Mastering & Bus", "2. Subtle Tube Heat", [&]() {
             setMode(1.0f); // TUBE
-            setParam("DRIVE", 4.5f); setParam("MIX", 0.3f); setOut(1.0f);
+            setParam("DRIVE", 4.5f); setParam("MIX", 1.0f); setOut(-2.3f);
             setParam("TONE", 0.1f); setParam("PUNCH", 0.0f);
             setLow(30.0f, false, 0.0f);
             setBell1(180.0f, 1.0f, 0.7f);
@@ -483,7 +500,7 @@ namespace FactoryPresets
         });
         createDefault("6. Mastering & Bus", "3. Vintage Console", [&]() {
             setMode(1.0f); // TUBE
-            setParam("DRIVE", 6.0f); setParam("MIX", 0.15f); setOut(1.5f);
+            setParam("DRIVE", 6.0f); setParam("MIX", 1.0f); setOut(-3.3f);
             setParam("TONE", 0.0f); setParam("PUNCH", 0.2f);
             setLow(35.0f, true, 1.0f);
             setBell1(120.0f, 1.5f, 0.7f);
@@ -492,7 +509,7 @@ namespace FactoryPresets
         });
         createDefault("6. Mastering & Bus", "4. Tape Mojo", [&]() {
             setMode(2.0f); // TAPE
-            setParam("DRIVE", 5.0f); setParam("MIX", 0.4f); setOut(0.5f);
+            setParam("DRIVE", 5.0f); setParam("MIX", 1.0f); setOut(-1.9f);
             setParam("TONE", -0.1f); setParam("PUNCH", 0.0f);
             setLow(28.0f, false, 0.0f);
             setBell1(150.0f, 1.0f, 0.7f);
@@ -501,7 +518,7 @@ namespace FactoryPresets
         });
         createDefault("6. Mastering & Bus", "5. Mastering Punch", [&]() {
             setMode(0.0f); // PUNCH
-            setParam("DRIVE", 4.0f); setParam("MIX", 0.2f); setOut(1.0f);
+            setParam("DRIVE", 4.0f); setParam("MIX", 1.0f); setOut(-2.7f);
             setParam("TONE", 0.15f); setParam("PUNCH", 0.4f);
             setLow(22.0f, false, 0.0f);
             setBell1(400.0f, -1.0f, 0.8f);
@@ -510,7 +527,7 @@ namespace FactoryPresets
         });
         createDefault("6. Mastering & Bus", "6. Analog Sheen", [&]() {
             setMode(1.0f); // TUBE
-            setParam("DRIVE", 3.0f); setParam("MIX", 0.2f); setOut(1.0f);
+            setParam("DRIVE", 3.0f); setParam("MIX", 1.0f); setOut(-1.6f);
             setParam("TONE", 0.1f); setParam("PUNCH", 0.0f);
             setLow(25.0f, false, 0.0f);
             setBell1(150.0f, 0.8f, 0.7f);
@@ -519,7 +536,7 @@ namespace FactoryPresets
         });
         createDefault("6. Mastering & Bus", "7. Gentle Compression Feel", [&]() {
             setMode(0.0f); // PUNCH
-            setParam("DRIVE", 2.5f); setParam("MIX", 0.15f); setOut(1.5f);
+            setParam("DRIVE", 2.5f); setParam("MIX", 1.0f); setOut(-1.4f);
             setParam("TONE", 0.0f); setParam("PUNCH", 0.1f);
             setLow(20.0f, false, 0.0f);
             setBell1(300.0f, -1.0f, 0.7f);
@@ -527,7 +544,7 @@ namespace FactoryPresets
         });
         createDefault("6. Mastering & Bus", "8. Loudness Maximizer Prep", [&]() {
             setMode(2.0f); // TAPE
-            setParam("DRIVE", 5.0f); setParam("MIX", 0.35f); setOut(0.5f);
+            setParam("DRIVE", 5.0f); setParam("MIX", 1.0f); setOut(-2.2f);
             setParam("TONE", 0.05f); setParam("PUNCH", 0.1f);
             setLow(20.0f, false, 0.0f);
             setBell1(250.0f, -1.5f, 0.7f);
