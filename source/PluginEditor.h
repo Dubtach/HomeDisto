@@ -502,6 +502,8 @@ public:
     // standard EQ-plugin convention, keeps the graph from needing a 5th
     // draggable dimension.
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    // NEW: double-click resets an EQ node to baseline (0 dB).
+    void mouseDoubleClick (const juce::MouseEvent&) override;
 
     // FIX: PresetBrowserPanel (a separate class, not a member of this one)
     // needs to call this after loading a preset from its own button
@@ -591,6 +593,9 @@ private:
     enum class FilterHandle { none, low, bell1, bell2, high };
     FilterHandle draggingFilterHandle = FilterHandle::none;
     FilterHandle hoveredFilterHandle = FilterHandle::none;
+    // NEW: reference point for shift-drag Q adjustment (incremental delta
+    // between consecutive drag frames).
+    juce::Point<float> lastDragPos;
     void toggleBandType (const juce::String& typeParamID);
 
     // NEW: filter slope, styled as a single segmented control. Only affects

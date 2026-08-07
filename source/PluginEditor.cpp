@@ -582,6 +582,7 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     audioProcessor.apvts.addParameterListener("DRIVE", this);
     audioProcessor.apvts.addParameterListener("TONE", this);
     audioProcessor.apvts.addParameterListener("PUNCH", this);
+    audioProcessor.apvts.addParameterListener("MIX", this);
     audioProcessor.apvts.addParameterListener("AUTO", this);
     recalibrateAutoBaseline();
 }
@@ -595,6 +596,7 @@ HomeDistoAudioProcessorEditor::~HomeDistoAudioProcessorEditor()
     audioProcessor.apvts.removeParameterListener("DRIVE", this);
     audioProcessor.apvts.removeParameterListener("TONE", this);
     audioProcessor.apvts.removeParameterListener("PUNCH", this);
+    audioProcessor.apvts.removeParameterListener("MIX", this);
     audioProcessor.apvts.removeParameterListener("AUTO", this);
     setLookAndFeel(nullptr); 
 }
@@ -638,11 +640,13 @@ void HomeDistoAudioProcessorEditor::parameterChanged (const juce::String& parame
                 applyAutoGainCompensation();
         });
     }
-    else if (parameterID == "DRIVE" || parameterID == "TONE" || parameterID == "PUNCH")
+    else if (parameterID == "DRIVE" || parameterID == "TONE" || parameterID == "PUNCH" || parameterID == "MIX")
     {
-        // NEW: AUTO reworked -- these three (plus MODE above) are exactly
-        // the knobs whose loudness AUTO is meant to compensate for. See
-        // applyAutoGainCompensation() for the actual formula/reasoning.
+        // AUTO -- these four (plus MODE above) are exactly the knobs whose
+        // loudness AUTO is meant to compensate for. MIX added per request:
+        // pulling MIX down reduces the compensation proportionally (see
+        // computeAutoCompDb) so turning it down doesn't just make
+        // everything quieter with nothing balancing it.
         juce::MessageManager::callAsync([this]() {
             if (audioProcessor.apvts.getRawParameterValue("AUTO")->load() > 0.5f)
                 applyAutoGainCompensation();
@@ -691,12 +695,23 @@ float HomeDistoAudioProcessorEditor::computeAutoCompDb() const
     float driveDb = audioProcessor.apvts.getRawParameterValue("DRIVE")->load();
     float toneDb = audioProcessor.apvts.getRawParameterValue("TONE")->load() * 6.0f;
     float punch = audioProcessor.apvts.getRawParameterValue("PUNCH")->load();
+    float mix = audioProcessor.apvts.getRawParameterValue("MIX")->load();
     int mode = juce::jlimit(0, 5, (int) audioProcessor.apvts.getRawParameterValue("MODE")->load());
 
     // PUNCH, TUBE, TAPE, DIGITAL, CRUNCH, FUZZ
     static const float modeOffsetDb[6] = { 0.0f, 0.0f, 0.5f, -1.5f, -0.5f, -2.0f };
 
-    return (-0.5f * driveDb) + (-0.15f * toneDb) + (-1.5f * punch) + modeOffsetDb[mode];
+    float rawComp = (-0.5f * driveDb) + (-0.15f * toneDb) + (-1.5f * punch) + modeOffsetDb[mode];
+
+    // NEW: MIX now scales the whole compensation. Physically motivated: at
+    // MIX=0 there's no wet (distorted) signal in the output at all, just
+    // dry, so there's nothing to compensate for -- compensation should be
+    // 0. At MIX=1 the full DRIVE/TONE/PUNCH/MODE compensation applies, same
+    // as before. Linear in between. Without this, pulling MIX down would
+    // just make everything quieter with nothing correcting for it, which
+    // is exactly the "balance" problem turning MIX down was supposed to
+    // avoid.
+    return rawComp * mix;
 }
 
 void HomeDistoAudioProcessorEditor::recalibrateAutoBaseline()
@@ -822,12 +837,34 @@ void HomeDistoAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
     else if (pos.getDistanceFrom(highHandlePos())  < kFilterHandleHitRadius) draggingFilterHandle = FilterHandle::high;
     else draggingFilterHandle = FilterHandle::none;
 
+    // NEW: reference point for shift-drag Q adjustment (see mouseDrag) --
+    // always tracked fresh from the actual click position so the first
+    // shift-drag frame never jumps.
+    lastDragPos = pos;
+
     repaint();
 }
 
 void HomeDistoAudioProcessorEditor::mouseDrag (const juce::MouseEvent& e)
 {
     if (draggingFilterHandle == FilterHandle::none) return;
+
+    // NEW: shift+drag on a bell node adjusts its Q ("bump shape") instead
+    // of moving it -- drag up to narrow/increase, down to widen/decrease.
+    // Uses incremental frame-to-frame delta (not absolute Y position) so
+    // toggling shift mid-drag never causes a jump, and reuses the same
+    // sensitivity/range as the existing scroll-wheel Q control.
+    if (e.mods.isShiftDown() && (draggingFilterHandle == FilterHandle::bell1 || draggingFilterHandle == FilterHandle::bell2))
+    {
+        juce::Slider& qSlider = (draggingFilterHandle == FilterHandle::bell1) ? bell1QSlider : bell2QSlider;
+        float deltaY = lastDragPos.y - e.position.y; // positive = dragged up
+        float q = juce::jlimit(0.2f, 8.0f, (float) qSlider.getValue() + deltaY * 0.05f);
+        qSlider.setValue(q, juce::sendNotificationSync);
+        lastDragPos = e.position;
+        repaint();
+        return;
+    }
+    lastDragPos = e.position;
 
     float newFreq = xToFreq(e.position.x);
     float newGain = yToGain(e.position.y);
@@ -901,6 +938,44 @@ void HomeDistoAudioProcessorEditor::mouseUp (const juce::MouseEvent& e)
         toggleBandType("EQ_LOW_TYPE");
     else if (wasClick && draggingFilterHandle == FilterHandle::high)
         toggleBandType("EQ_HIGH_TYPE");
+
+    draggingFilterHandle = FilterHandle::none;
+    repaint();
+}
+
+void HomeDistoAudioProcessorEditor::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    // NEW: double-clicking any node resets it to baseline (0 dB) --
+    // matches exactly what the EQ reset button does for that one node:
+    // LOW/HIGH get their gain zeroed AND their frequency returned to the
+    // neutral edge of their range (20 Hz / 20000 Hz, where a Cut is
+    // inaudible); bells just get their gain zeroed, keeping whatever
+    // freq/Q they were already set to.
+    auto pos = e.position;
+    auto& ap = audioProcessor.apvts;
+    auto setNorm = [&ap](const juce::String& id, float realValue) {
+        if (auto* p = ap.getParameter(id)) p->setValueNotifyingHost(p->convertTo0to1(realValue));
+    };
+
+    if (pos.getDistanceFrom(lowHandlePos()) < kFilterHandleHitRadius)
+    {
+        setNorm("EQ_LOW_FREQ", 20.0f);
+        setNorm("EQ_LOW_GAIN", 0.0f);
+    }
+    else if (pos.getDistanceFrom(bell1HandlePos()) < kFilterHandleHitRadius)
+    {
+        setNorm("EQ_BELL1_GAIN", 0.0f);
+    }
+    else if (pos.getDistanceFrom(bell2HandlePos()) < kFilterHandleHitRadius)
+    {
+        setNorm("EQ_BELL2_GAIN", 0.0f);
+    }
+    else if (pos.getDistanceFrom(highHandlePos()) < kFilterHandleHitRadius)
+    {
+        setNorm("EQ_HIGH_FREQ", 20000.0f);
+        setNorm("EQ_HIGH_GAIN", 0.0f);
+    }
+    else return;
 
     draggingFilterHandle = FilterHandle::none;
     repaint();
@@ -1073,6 +1148,18 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     drawCardText("EQ", 20, 271, 230, 18, juce::Justification::centred);
     g.setColour(juce::Colours::black.withAlpha(0.25f));
     g.drawLine(125.0f, 288.0f, 145.0f, 288.0f, 1.2f);
+
+    // NEW: shared backdrop behind the reset/lock icon cluster (matches the
+    // bounds set in resized()) -- previously two separate floating circles,
+    // now reads as one connected control the way the slope segmented
+    // control does below.
+    {
+        juce::Rectangle<float> iconTrack(200.0f, 266.0f, 42.0f, 22.0f);
+        g.setColour(juce::Colours::black.withAlpha(0.3f));
+        g.fillRoundedRectangle(iconTrack, 5.0f);
+        g.setColour(juce::Colours::white.withAlpha(0.06f));
+        g.drawRoundedRectangle(iconTrack, 5.0f, 1.0f);
+    }
 
     // NEW: shared pill-shaped track behind the slope segmented control --
     // drawn here (once, in the parent) so all 3 buttons read as one control.
@@ -1317,8 +1404,11 @@ void HomeDistoAudioProcessorEditor::resized()
     // title. Bounds must match the slopeTrack rectangle drawn in paint().
     // NEW: EQ reset/lock icons, top-right corner of the EQ card (title text
     // is centred and short, so the corners are clear).
-    eqResetButton.setBounds(206, 269, 16, 16);
-    eqLockButton.setBounds(226, 269, 16, 16);
+    // NEW: bumped up from 16x16 to 18x18 (small target was fiddly to hit)
+    // and pulled closer together so the shared backdrop drawn in paint()
+    // reads as one connected control cluster, not two floating dots.
+    eqResetButton.setBounds(202, 268, 18, 18);
+    eqLockButton.setBounds(222, 268, 18, 18);
 
     for (int i = 0; i < 3; ++i)
         slopeButtons[i].setBounds(76 + i * 42, 291, 34, 16);
