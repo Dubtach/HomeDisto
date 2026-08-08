@@ -1149,18 +1149,6 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour(juce::Colours::black.withAlpha(0.25f));
     g.drawLine(125.0f, 288.0f, 145.0f, 288.0f, 1.2f);
 
-    // NEW: shared backdrop behind the reset/lock icon cluster (matches the
-    // bounds set in resized()) -- previously two separate floating circles,
-    // now reads as one connected control the way the slope segmented
-    // control does below.
-    {
-        juce::Rectangle<float> iconTrack(200.0f, 266.0f, 42.0f, 22.0f);
-        g.setColour(juce::Colours::black.withAlpha(0.3f));
-        g.fillRoundedRectangle(iconTrack, 5.0f);
-        g.setColour(juce::Colours::white.withAlpha(0.06f));
-        g.drawRoundedRectangle(iconTrack, 5.0f, 1.0f);
-    }
-
     // NEW: shared pill-shaped track behind the slope segmented control --
     // drawn here (once, in the parent) so all 3 buttons read as one control.
     // Matches the bounds set in resized().
@@ -1207,44 +1195,74 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour(juce::Colours::black.withAlpha(0.2f));
     g.drawLine(filterGraphLeft, filterGraphMidY, filterGraphRight, filterGraphMidY, 1.5f);
 
-    // Corner sharpness for CUT-mode bands reflects the selected filter
-    // slope: gentler roll-off (12 dB/oct) draws a wide, soft dive to the
-    // floor; steeper slopes (24/48 dB/oct) draw a progressively tighter one.
+    // FIX: this used to be a handful of fixed Bezier control points based
+    // only on node position, which is exactly why changing a bell's Q did
+    // nothing visible -- Q was never part of the curve math at all. This
+    // instead samples the actual combined dB response across the frequency
+    // axis (summing each band's contribution in dB, the same way real EQ
+    // plugins draw their curves) and connects the samples -- so Q, gain,
+    // and slope all visibly shape the line now, not just node position.
     int slopeIdx = juce::jlimit(0, 2, (int) audioProcessor.apvts.getRawParameterValue("SLOPE")->load());
-    float cornerOffset = slopeIdx == 0 ? 16.0f : (slopeIdx == 1 ? 8.0f : 2.5f);
+    float slopeDbPerOct = 12.0f * (float) (slopeIdx == 0 ? 1 : (slopeIdx == 1 ? 2 : 4));
+
+    float lowFreqHz  = (float) lowFreqSlider.getValue();
+    float lowGainDb  = (float) lowGainSlider.getValue();
+    float highFreqHz = (float) highFreqSlider.getValue();
+    float highGainDb = (float) highGainSlider.getValue();
+    float bell1FreqHz = (float) bell1FreqSlider.getValue();
+    float bell1GainDb = (float) bell1GainSlider.getValue();
+    float bell1QVal    = (float) bell1QSlider.getValue();
+    float bell2FreqHz = (float) bell2FreqSlider.getValue();
+    float bell2GainDb = (float) bell2GainSlider.getValue();
+    float bell2QVal    = (float) bell2QSlider.getValue();
+
+    // Gaussian-in-octaves bump: higher Q -> narrower bandwidth -> tighter,
+    // more surgical peak. Lower Q -> wide, gentle bump. Matches the
+    // shift-drag/scroll-wheel Q control directly.
+    auto bellContribution = [](float hz, float centerHz, float gainDb, float q) {
+        float octaves = std::log2(hz / centerHz);
+        float bandwidthOct = 1.0f / juce::jmax(0.15f, q);
+        float t = octaves / juce::jmax(0.05f, bandwidthOct);
+        return gainDb * std::exp(-t * t);
+    };
 
     juce::Path eqCurve;
-
-    // FIX: when LOW sits at its minimum (20 Hz, i.e. lowPt.x already equals
-    // filterGraphLeft) or HIGH at its maximum (20000 Hz, highPt.x equals
-    // filterGraphRight), the dive-to-floor control point below (offset by
-    // cornerOffset from the node) landed OUTSIDE the graph's left/right
-    // bounds entirely -- the curve doesn't just look "weird" at the edge,
-    // it actually pokes past the box. Clamping the control point's X to
-    // the graph bounds keeps the whole curve contained regardless of where
-    // the nodes are.
-    float lowControlX = juce::jmax(filterGraphLeft, lowPt.x - cornerOffset);
-    float highControlX = juce::jmin(filterGraphRight, highPt.x + cornerOffset);
-
-    if (lowType == 0) // Cut: dive to the floor left of the node
+    const int numSamples = 120;
+    for (int i = 0; i <= numSamples; ++i)
     {
-        eqCurve.startNewSubPath(filterGraphLeft, filterGraphBottomY);
-        eqCurve.cubicTo(lowControlX, filterGraphBottomY, lowControlX, lowPt.y, lowPt.x, lowPt.y);
-    }
-    else // Shelf: approach the node's gain level smoothly
-    {
-        eqCurve.startNewSubPath(filterGraphLeft, lowPt.y);
-        eqCurve.lineTo(lowPt.x, lowPt.y);
-    }
+        float x = filterGraphLeft + (filterGraphRight - filterGraphLeft) * (float) i / (float) numSamples;
+        float hz = xToFreq(x);
+        float gainDb = 0.0f;
 
-    eqCurve.cubicTo((lowPt.x + bell1Pt.x) * 0.5f, lowPt.y, (lowPt.x + bell1Pt.x) * 0.5f, bell1Pt.y, bell1Pt.x, bell1Pt.y);
-    eqCurve.cubicTo((bell1Pt.x + bell2Pt.x) * 0.5f, bell1Pt.y, (bell1Pt.x + bell2Pt.x) * 0.5f, bell2Pt.y, bell2Pt.x, bell2Pt.y);
-    eqCurve.cubicTo((bell2Pt.x + highPt.x) * 0.5f, bell2Pt.y, (bell2Pt.x + highPt.x) * 0.5f, highPt.y, highPt.x, highPt.y);
+        if (lowType == 0) // Cut: real slope-based roll-off below the corner
+        {
+            if (hz < lowFreqHz)
+                gainDb += -slopeDbPerOct * std::log2(lowFreqHz / hz);
+        }
+        else // Shelf: smooth sigmoid transition centred on the corner freq
+        {
+            float t = 1.0f / (1.0f + std::exp(std::log2(hz / lowFreqHz) * 3.0f));
+            gainDb += lowGainDb * t;
+        }
 
-    if (highType == 0) // Cut: dive to the floor right of the node
-        eqCurve.cubicTo(highControlX, highPt.y, highControlX, filterGraphBottomY, filterGraphRight, filterGraphBottomY);
-    else // Shelf
-        eqCurve.lineTo(filterGraphRight, highPt.y);
+        if (highType == 0) // Cut
+        {
+            if (hz > highFreqHz)
+                gainDb += -slopeDbPerOct * std::log2(hz / highFreqHz);
+        }
+        else // Shelf
+        {
+            float t = 1.0f / (1.0f + std::exp(-std::log2(hz / highFreqHz) * 3.0f));
+            gainDb += highGainDb * t;
+        }
+
+        gainDb += bellContribution(hz, bell1FreqHz, bell1GainDb, bell1QVal);
+        gainDb += bellContribution(hz, bell2FreqHz, bell2GainDb, bell2QVal);
+
+        float y = gainToY(gainDb); // already clamps to the +/-18dB graph range
+        if (i == 0) eqCurve.startNewSubPath(x, y);
+        else eqCurve.lineTo(x, y);
+    }
 
     g.setColour(juce::Colours::black.withAlpha(0.4f));
     g.strokePath(eqCurve, juce::PathStrokeType(3.5f), juce::AffineTransform::translation(0, 1.5f));
@@ -1385,8 +1403,8 @@ void HomeDistoAudioProcessorEditor::resized()
     presetMenuButton.setBounds(presetArea);
     
     saveButton.setBounds(520, 20, 30, 30); 
-    bypassButton.setBounds(620, 20, 30, 30);
-    settingsButton.setBounds(660, 20, 30, 30); 
+    settingsButton.setBounds(620, 20, 30, 30);
+    bypassButton.setBounds(660, 20, 30, 30); 
 
     for (int i = 0; i < 6; ++i) 
     {
@@ -1420,11 +1438,11 @@ void HomeDistoAudioProcessorEditor::resized()
     outputKnob.setBounds(555, 125, 120, 120); 
     // FIX: was overlapping the knob's corner directly -- moved clear to the
     // right of the knob with a real gap, vertically centered on it.
-    outputLockButton.setBounds(555 + 120 - 18, 125, 18, 18);
+    outputLockButton.setBounds(555 + 120 + 4, 125 + 120 / 2 - 9, 18, 18);
     
     autoToggle.setBounds(615, 90, 75, 20); 
     
     mixKnob.setBounds(580, 290, 70, 70);
     // FIX: same spacing fix as outputLockButton above.
-    mixLockButton.setBounds(580 + 60 + 6, 290, 18, 18);
+    mixLockButton.setBounds(580 + 70 + 8, 290 + 70 / 2 - 9, 18, 18);
 }

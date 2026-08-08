@@ -26,6 +26,19 @@ HomeDistoAudioProcessor::HomeDistoAudioProcessor()
     highShelfFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighShelf(44100.0, 8000.0f, 0.707f, 1.0f);
     bell1Filter.state = juce::dsp::IIR::Coefficients<float>::makePeakFilter(44100.0, 400.0f, 0.8f, 1.0f);
     bell2Filter.state = juce::dsp::IIR::Coefficients<float>::makePeakFilter(44100.0, 2500.0f, 0.8f, 1.0f);
+
+    // FIX: dry-path filters share the SAME Coefficients object as their wet
+    // counterparts (not a copy -- the same reference-counted pointer), so
+    // any coefficient update made to one is automatically reflected in the
+    // other with a single call. Only the per-instance filter state
+    // (delay-line history) differs, which is exactly what needs to differ
+    // for two independent signal paths.
+    for (auto& stage : dryLowCutStages)  stage.state = lowCutCoeffs;
+    for (auto& stage : dryHighCutStages) stage.state = highCutCoeffs;
+    dryLowShelfFilter.state = lowShelfFilter.state;
+    dryHighShelfFilter.state = highShelfFilter.state;
+    dryBell1Filter.state = bell1Filter.state;
+    dryBell2Filter.state = bell2Filter.state;
     toneFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighShelf(44100.0, 1000.0f, 0.707f, 1.0f);
     smoothFilter.state = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 20000.0f);
     dcBlockerFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighPass(44100.0, 15.0f);
@@ -114,6 +127,15 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     highShelfFilter.prepare(spec);
     bell1Filter.prepare(spec);
     bell2Filter.prepare(spec);
+
+    // NEW: dry-path EQ, phase-matched to the wet chain above.
+    for (auto& stage : dryLowCutStages)  stage.prepare(spec);
+    for (auto& stage : dryHighCutStages) stage.prepare(spec);
+    dryLowShelfFilter.prepare(spec);
+    dryHighShelfFilter.prepare(spec);
+    dryBell1Filter.prepare(spec);
+    dryBell2Filter.prepare(spec);
+
     toneFilter.prepare(spec);
     smoothFilter.prepare(spec);
     dcBlockerFilter.prepare(spec);
@@ -417,12 +439,23 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     juce::dsp::AudioBlock<float> block (buffer);
     juce::dsp::ProcessContextReplacing<float> context (block);
 
+    // FIX: dry now goes through the SAME EQ (not the distortion stage --
+    // see the header comment above the dry filter members for why that
+    // scope is deliberate) as wet, using separate filter instances that
+    // share the wet ones' coefficients. This is what eliminates the
+    // "hollow/phasey" sound at partial MIX -- both paths now have matching
+    // phase response, so summing them at any ratio doesn't comb-filter.
+    auto dryBlock = juce::dsp::AudioBlock<float>(dryBuffer).getSubBlock(0, (size_t) numSamples);
+    juce::dsp::ProcessContextReplacing<float> dryContext (dryBlock);
+
     // REDESIGNED: this is now a standard 4-band EQ shaping tone BEFORE the
     // distortion stage, applied to the whole wet signal (see the header
     // comment above the filter members for why the old "only this band
     // gets distorted" subtraction trick isn't compatible with shelves/bells).
     bell1Filter.process(context);
     bell2Filter.process(context);
+    dryBell1Filter.process(dryContext);
+    dryBell2Filter.process(dryContext);
 
     // SLOPE picks how many identical cut stages get cascaded for a
     // steeper roll-off: 1 stage = 12 dB/oct, 2 = 24, 4 = 48. Only relevant
@@ -435,24 +468,33 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         // reset everything on a slope change so it doesn't click.
         for (auto& stage : lowCutStages)  stage.reset();
         for (auto& stage : highCutStages) stage.reset();
+        for (auto& stage : dryLowCutStages)  stage.reset();
+        for (auto& stage : dryHighCutStages) stage.reset();
         lastSlopeStageCount = slopeStageCount;
     }
 
-    if (lowType == 0) { for (int i = 0; i < slopeStageCount; ++i) lowCutStages[i].process(context); }
-    else               { lowShelfFilter.process(context); }
+    if (lowType == 0) { for (int i = 0; i < slopeStageCount; ++i) { lowCutStages[i].process(context); dryLowCutStages[i].process(dryContext); } }
+    else               { lowShelfFilter.process(context); dryLowShelfFilter.process(dryContext); }
 
-    if (highType == 0) { for (int i = 0; i < slopeStageCount; ++i) highCutStages[i].process(context); }
-    else                { highShelfFilter.process(context); }
+    if (highType == 0) { for (int i = 0; i < slopeStageCount; ++i) { highCutStages[i].process(context); dryHighCutStages[i].process(dryContext); } }
+    else                { highShelfFilter.process(context); dryHighShelfFilter.process(dryContext); }
 
     // --- FIX: PRE-EQ BLOWUP PROTECTION ---
     // Protects against IIR filters exploding due to rapid automation sweeps.
+    // Now also sanitizes dryBuffer, since it's actually being filtered too.
     bool wetBlewUp = false;
+    bool dryBlewUp = false;
     for (int ch = 0; ch < totalNumOutputChannels; ++ch) {
         auto* wData = buffer.getWritePointer(ch);
+        auto* dData = dryBuffer.getWritePointer(ch);
         for (int s = 0; s < numSamples; ++s) {
             if (!std::isfinite(wData[s]) || std::abs(wData[s]) > 24.0f) {
                 wData[s] = 0.0f;
                 wetBlewUp = true;
+            }
+            if (!std::isfinite(dData[s]) || std::abs(dData[s]) > 24.0f) {
+                dData[s] = 0.0f;
+                dryBlewUp = true;
             }
         }
     }
@@ -464,6 +506,14 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         highShelfFilter.reset();
         bell1Filter.reset();
         bell2Filter.reset();
+    }
+    if (dryBlewUp) {
+        for (auto& stage : dryLowCutStages)  stage.reset();
+        for (auto& stage : dryHighCutStages) stage.reset();
+        dryLowShelfFilter.reset();
+        dryHighShelfFilter.reset();
+        dryBell1Filter.reset();
+        dryBell2Filter.reset();
     }
 
     // REDESIGNED: AUTO used to be RMS-based makeup gain computed here on

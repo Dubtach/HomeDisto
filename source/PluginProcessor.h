@@ -90,6 +90,28 @@ private:
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> highShelfFilter;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> bell1Filter;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> bell2Filter;
+
+    // FIX: at any MIX between 0-100%, dry and wet were being summed
+    // directly -- but wet goes through the 4-band EQ (real IIR filters,
+    // which all have a phase response) while dry stayed completely
+    // unfiltered/phase-flat. Summing two signals with different phase
+    // response at the same frequencies is exactly what comb filtering is;
+    // it reads as "hollow", "phasey", "something missing" -- present at
+    // any partial mix, gone at 0 or 100% because only one signal is
+    // present then. Each of these mirrors its wet counterpart exactly,
+    // SHARING the same Coefficients object (assigned in the constructor)
+    // so they always process identically -- only the per-instance filter
+    // state differs, which is what keeps dry and wet phase-matched.
+    // Deliberate scope: only the EQ is mirrored, not TONE/SMOOTH/the
+    // waveshaper -- those are the distortion stage's own character and
+    // have nothing to phase-match against on a signal that was never
+    // distorted in the first place.
+    std::array<juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>>, kMaxFilterStages> dryLowCutStages;
+    std::array<juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>>, kMaxFilterStages> dryHighCutStages;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> dryLowShelfFilter;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> dryHighShelfFilter;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> dryBell1Filter;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> dryBell2Filter;
     int lastSlopeStageCount = 1;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> toneFilter;
 
