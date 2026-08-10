@@ -82,7 +82,15 @@ public:
             // Strip the leading sort-order prefix ("1. Guitars" -> "Guitars")
             // for the chip label and header -- the number is only there to
             // control folder sort order, showing it is just noise.
-            cat.displayName = pair.first.fromFirstOccurrenceOf(". ", false, false);
+            // FIX: this was showing blank for the "User" category. JUCE's
+            // fromFirstOccurrenceOf() returns an EMPTY string when the
+            // substring isn't found at all -- it does NOT fall back to the
+            // original string. "User" has no ". " in it (no numeric sort
+            // prefix), so it was silently blanking out every time. Only
+            // strip when the prefix is actually present.
+            cat.displayName = pair.first.contains(". ")
+                ? pair.first.fromFirstOccurrenceOf(". ", false, false)
+                : pair.first;
 
             auto header = std::make_unique<juce::Label>();
             header->setText(cat.displayName, juce::dontSendNotification);
@@ -554,26 +562,11 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     audioProcessor.apvts.addParameterListener("EQ_LOW_TYPE", this);
     audioProcessor.apvts.addParameterListener("EQ_HIGH_TYPE", this);
 
-    // NEW: filter slope buttons (12/24/48 dB/oct) styled as a single
-    // segmented control (see SLOPE_BTN handling in the LookAndFeel) rather
-    // than three separate boxes.
-    for (int i = 0; i < 3; ++i)
-    {
-        slopeButtons[i].setName("SLOPE_BTN");
-        slopeButtons[i].setButtonText(slopeButtonLabels[i]);
-        slopeButtons[i].setRadioGroupId(101);
-        slopeButtons[i].setClickingTogglesState(true);
-        addAndMakeVisible(slopeButtons[i]);
-
-        slopeButtons[i].onClick = [this, i] {
-            audioProcessor.apvts.getParameter("SLOPE")->setValueNotifyingHost(i / 2.0f);
-            repaint(); // the visual curve steepness depends on slope too
-        };
-    }
-
+    // FIX: the on-screen 12/24/48 slope buttons are gone -- SLOPE is
+    // controlled directly on the graph now (right-drag LOW/HIGH), so a
+    // separate widget for it was redundant. Still a real APVTS parameter,
+    // still needs a listener so automation/preset loads repaint the curve.
     audioProcessor.apvts.addParameterListener("SLOPE", this);
-    int initialSlope = (int) audioProcessor.apvts.getRawParameterValue("SLOPE")->load();
-    slopeButtons[juce::jlimit(0, 2, initialSlope)].setToggleState(true, juce::dontSendNotification);
 
     // NEW: AUTO reworked entirely -- see applyAutoGainCompensation() for
     // the full explanation. DRIVE/TONE/PUNCH need their own listeners here
@@ -663,11 +656,7 @@ void HomeDistoAudioProcessorEditor::parameterChanged (const juce::String& parame
     }
     else if (parameterID == "SLOPE")
     {
-        juce::MessageManager::callAsync([this, newValue]() {
-            int idx = juce::jlimit(0, 2, (int) newValue);
-            slopeButtons[idx].setToggleState(true, juce::dontSendNotification);
-            repaint(); // visual curve steepness depends on slope
-        });
+        juce::MessageManager::callAsync([this]() { repaint(); }); // curve steepness depends on slope
     }
     else if (parameterID == "EQ_LOW_TYPE" || parameterID == "EQ_HIGH_TYPE")
     {
@@ -805,6 +794,19 @@ void HomeDistoAudioProcessorEditor::toggleBandType(const juce::String& typeParam
     p->setValueNotifyingHost((float) next);
 }
 
+// NEW: replaces the old on-screen 12/24/48 dB/oct slope buttons entirely --
+// right-drag on LOW/HIGH scrubs through these 3 options directly (see
+// mouseDrag). SLOPE is still a real, 3-choice APVTS parameter underneath;
+// this just steps it by +1/-1 with wraparound.
+void HomeDistoAudioProcessorEditor::cycleSlope(int direction)
+{
+    auto* p = audioProcessor.apvts.getParameter("SLOPE");
+    if (p == nullptr) return;
+    int current = (int) audioProcessor.apvts.getRawParameterValue("SLOPE")->load();
+    int next = (current + direction + 3) % 3;
+    p->setValueNotifyingHost(next / 2.0f); // 3 choices -- normalized == index/(3-1)
+}
+
 namespace
 {
     constexpr float kFilterHandleHitRadius = 11.0f;
@@ -837,9 +839,18 @@ void HomeDistoAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
     else if (pos.getDistanceFrom(highHandlePos())  < kFilterHandleHitRadius) draggingFilterHandle = FilterHandle::high;
     else draggingFilterHandle = FilterHandle::none;
 
-    // NEW: reference point for shift-drag Q adjustment (see mouseDrag) --
-    // always tracked fresh from the actual click position so the first
-    // shift-drag frame never jumps.
+    // FIX: previously left-click alone had to do double duty -- a quick
+    // click toggled Cut/Shelf, a drag moved the node -- disambiguated only
+    // by how far the mouse moved before release, which made it easy to
+    // accidentally flip the type when you meant to just nudge it slightly.
+    // Left button is now ALWAYS a drag (position, or Q with shift); the
+    // right button is reserved entirely for the two discrete LOW/HIGH
+    // actions (type toggle on a right-click, slope on a right-drag), so
+    // there's no ambiguity between the two gestures anymore -- they're on
+    // different buttons.
+    rightButtonDrag = e.mods.isRightButtonDown();
+    slopeDragAccum = 0.0f;
+
     lastDragPos = pos;
 
     repaint();
@@ -849,11 +860,26 @@ void HomeDistoAudioProcessorEditor::mouseDrag (const juce::MouseEvent& e)
 {
     if (draggingFilterHandle == FilterHandle::none) return;
 
-    // NEW: shift+drag on a bell node adjusts its Q ("bump shape") instead
-    // of moving it -- drag up to narrow/increase, down to widen/decrease.
-    // Uses incremental frame-to-frame delta (not absolute Y position) so
-    // toggling shift mid-drag never causes a jump, and reuses the same
-    // sensitivity/range as the existing scroll-wheel Q control.
+    // NEW: right-drag on LOW/HIGH scrubs through the SLOPE options
+    // (12/24/48 dB/oct) -- replaces the old on-screen slope buttons
+    // entirely, since this can control it directly on the node it affects.
+    if (rightButtonDrag && (draggingFilterHandle == FilterHandle::low || draggingFilterHandle == FilterHandle::high))
+    {
+        float deltaY = lastDragPos.y - e.position.y; // positive = dragged up
+        slopeDragAccum += deltaY;
+        constexpr float pxPerStep = 26.0f;
+        while (slopeDragAccum > pxPerStep)  { cycleSlope(+1); slopeDragAccum -= pxPerStep; }
+        while (slopeDragAccum < -pxPerStep) { cycleSlope(-1); slopeDragAccum += pxPerStep; }
+        lastDragPos = e.position;
+        repaint();
+        return;
+    }
+    if (rightButtonDrag) return; // right-drag on a bell isn't a defined gesture
+
+    // Shift+drag on a bell node adjusts its Q ("bump shape") instead of
+    // moving it -- drag up to narrow/increase, down to widen/decrease.
+    // Incremental frame-to-frame delta (not absolute Y position) so
+    // toggling shift mid-drag never causes a jump.
     if (e.mods.isShiftDown() && (draggingFilterHandle == FilterHandle::bell1 || draggingFilterHandle == FilterHandle::bell2))
     {
         juce::Slider& qSlider = (draggingFilterHandle == FilterHandle::bell1) ? bell1QSlider : bell2QSlider;
@@ -931,15 +957,17 @@ void HomeDistoAudioProcessorEditor::mouseDrag (const juce::MouseEvent& e)
 
 void HomeDistoAudioProcessorEditor::mouseUp (const juce::MouseEvent& e)
 {
-    // NEW: clicking (not dragging) the LOW or HIGH node toggles it between
-    // Cut and Shelf -- keeps the graph uncluttered with extra buttons.
+    // FIX: type-toggle moved off left-click entirely (see mouseDown) --
+    // now a plain right-click (not a right-drag, which scrubs slope
+    // instead) on LOW/HIGH toggles Cut/Shelf.
     bool wasClick = e.getDistanceFromDragStart() < 4;
-    if (wasClick && draggingFilterHandle == FilterHandle::low)
+    if (wasClick && rightButtonDrag && draggingFilterHandle == FilterHandle::low)
         toggleBandType("EQ_LOW_TYPE");
-    else if (wasClick && draggingFilterHandle == FilterHandle::high)
+    else if (wasClick && rightButtonDrag && draggingFilterHandle == FilterHandle::high)
         toggleBandType("EQ_HIGH_TYPE");
 
     draggingFilterHandle = FilterHandle::none;
+    rightButtonDrag = false;
     repaint();
 }
 
@@ -1149,15 +1177,6 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour(juce::Colours::black.withAlpha(0.25f));
     g.drawLine(125.0f, 288.0f, 145.0f, 288.0f, 1.2f);
 
-    // NEW: shared pill-shaped track behind the slope segmented control --
-    // drawn here (once, in the parent) so all 3 buttons read as one control.
-    // Matches the bounds set in resized().
-    {
-        juce::Rectangle<float> slopeTrack(76.0f, 291.0f, 118.0f, 16.0f);
-        g.setColour(juce::Colours::black.withAlpha(0.35f));
-        g.fillRoundedRectangle(slopeTrack, 3.0f);
-    }
-
     // REDESIGNED: 4 draggable nodes now (was 2) -- LOW, BELL1, BELL2, HIGH.
     // Click (no drag) a LOW/HIGH node to toggle Cut<->Shelf; drag to move
     // it. Bell nodes always drag freely in freq+gain; scroll wheel over one
@@ -1312,36 +1331,42 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     {
         juce::Point<float> pt;
         juce::String text;
+        static const char* slopeLabels[3] = { "12dB/oct", "24dB/oct", "48dB/oct" };
+        juce::String slopeLabel = slopeLabels[slopeIdx];
 
         if (shownHandle == FilterHandle::low)
         {
             pt = lowPt;
             text = getFrequencyString((float) lowFreqSlider.getValue());
             if (lowType == 1) text += " / " + juce::String((float) lowGainSlider.getValue(), 1) + " dB";
-            else text += " (Cut)";
+            else text += " (Cut, " + slopeLabel + ")";
         }
         else if (shownHandle == FilterHandle::high)
         {
             pt = highPt;
             text = getFrequencyString((float) highFreqSlider.getValue());
             if (highType == 1) text += " / " + juce::String((float) highGainSlider.getValue(), 1) + " dB";
-            else text += " (Cut)";
+            else text += " (Cut, " + slopeLabel + ")";
         }
         else if (shownHandle == FilterHandle::bell1)
         {
             pt = bell1Pt;
-            text = getFrequencyString((float) bell1FreqSlider.getValue()) + " / " + juce::String((float) bell1GainSlider.getValue(), 1) + " dB";
+            text = getFrequencyString((float) bell1FreqSlider.getValue()) + " / "
+                 + juce::String((float) bell1GainSlider.getValue(), 1) + " dB / Q "
+                 + juce::String((float) bell1QSlider.getValue(), 2);
         }
         else
         {
             pt = bell2Pt;
-            text = getFrequencyString((float) bell2FreqSlider.getValue()) + " / " + juce::String((float) bell2GainSlider.getValue(), 1) + " dB";
+            text = getFrequencyString((float) bell2FreqSlider.getValue()) + " / "
+                 + juce::String((float) bell2GainSlider.getValue(), 1) + " dB / Q "
+                 + juce::String((float) bell2QSlider.getValue(), 2);
         }
 
         g.setFont(juce::FontOptions(11.0f).withName("Helvetica").withStyle("Bold"));
         float textWidth = juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), text) + 14.0f;
         juce::Rectangle<float> bubble(pt.x - textWidth * 0.5f, pt.y - 26.0f, textWidth, 16.0f);
-        bubble = bubble.constrainedWithin(juce::Rectangle<float>(filterGraphLeft, 292.0f, filterGraphRight - filterGraphLeft, 100.0f));
+        bubble = bubble.constrainedWithin(juce::Rectangle<float>(filterGraphLeft, 272.0f, filterGraphRight - filterGraphLeft, 120.0f));
 
         g.setColour(juce::Colour(0xFF161618));
         g.fillRoundedRectangle(bubble, 3.0f);
@@ -1418,18 +1443,12 @@ void HomeDistoAudioProcessorEditor::resized()
     // graph itself is drawn/hit-tested via freqToX/gainToY (see paint() and
     // the mouse handlers), not via each slider's own on-screen size.
 
-    // Slope buttons sit in their own centred row directly under the EQ
-    // title. Bounds must match the slopeTrack rectangle drawn in paint().
-    // NEW: EQ reset/lock icons, top-right corner of the EQ card (title text
-    // is centred and short, so the corners are clear).
-    // NEW: bumped up from 16x16 to 18x18 (small target was fiddly to hit)
-    // and pulled closer together so the shared backdrop drawn in paint()
-    // reads as one connected control cluster, not two floating dots.
+    // EQ reset/lock icons, top-right corner of the EQ card (title text is
+    // centred and short, so the corners are clear). 18x18, independent
+    // (no shared backdrop -- that made on/off harder to tell apart, not
+    // easier).
     eqResetButton.setBounds(202, 268, 18, 18);
     eqLockButton.setBounds(222, 268, 18, 18);
-
-    for (int i = 0; i < 3; ++i)
-        slopeButtons[i].setBounds(76 + i * 42, 291, 34, 16);
 
     driveKnob.setBounds(315, 115, 150, 150); 
     toneKnob.setBounds(290, 285, 70, 70);

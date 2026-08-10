@@ -121,43 +121,33 @@ public:
     {
         auto bounds = button.getLocalBounds().toFloat();
 
-        if (button.getName() == "SLOPE_BTN")
-        {
-            // FIX: was three separate boxed TextButtons (the "don't like how
-            // they look" complaint) -- now a proper segmented-control style.
-            // The shared pill-shaped track is drawn once in the editor's
-            // paint() behind all three; each button only draws its own
-            // active-state highlight on top of that shared track, so they
-            // read as one control instead of three disconnected boxes.
-            // FIX: was cyan, which clashed against the EQ card's own green
-            // accent (0xFF00FF87) -- now matches it for visual consistency.
-            if (button.getToggleState())
-            {
-                g.setColour(juce::Colour(0xFF00FF87));
-                g.fillRoundedRectangle(bounds.reduced(1.5f), 3.0f);
-            }
-            else if (shouldDrawButtonAsHighlighted)
-            {
-                g.setColour(juce::Colours::white.withAlpha(0.08f));
-                g.fillRoundedRectangle(bounds.reduced(1.5f), 3.0f);
-            }
-            return;
-        }
-
         if (button.getName() == "LOCK")
         {
+            // FIX: locked vs unlocked was only a subtle icon-colour change,
+            // which was genuinely hard to tell apart at a glance ("hard to
+            // notice even if it's off"). Locked now fills the whole circle
+            // solid, with a dark icon on top -- an unmistakable "this is
+            // pressed/active" look, the same visual language a toggled
+            // mode/bypass button already uses elsewhere in this UI.
+            // Unlocked is now a plain, mostly-empty outline circle.
             bool locked = button.getToggleState();
             auto cX = bounds.getCentreX();
             auto cY = bounds.getCentreY() + 1.0f;
 
-            // subtle backdrop so the icon reads clearly against the knob card
-            g.setColour(juce::Colours::black.withAlpha(shouldDrawButtonAsHighlighted ? 0.35f : 0.2f));
-            g.fillEllipse(bounds.reduced(1.0f));
-
-            juce::Colour iconColour = locked
-                ? juce::Colour(0xFF00E5FF)
-                : juce::Colours::white.withAlpha(shouldDrawButtonAsHighlighted ? 0.75f : 0.45f);
-            g.setColour(iconColour);
+            if (locked)
+            {
+                g.setColour(juce::Colour(0xFF00E5FF).withAlpha(shouldDrawButtonAsHighlighted ? 1.0f : 0.9f));
+                g.fillEllipse(bounds.reduced(1.0f));
+                g.setColour(juce::Colour(0xFF09090B));
+            }
+            else
+            {
+                g.setColour(juce::Colours::black.withAlpha(shouldDrawButtonAsHighlighted ? 0.4f : 0.25f));
+                g.fillEllipse(bounds.reduced(1.0f));
+                g.setColour(juce::Colours::white.withAlpha(0.4f));
+                g.drawEllipse(bounds.reduced(1.0f), 1.0f);
+                g.setColour(juce::Colours::white.withAlpha(shouldDrawButtonAsHighlighted ? 0.8f : 0.5f));
+            }
 
             // shackle
             juce::Path shackle;
@@ -181,13 +171,20 @@ public:
             auto cX = bounds.getCentreX();
             auto cY = bounds.getCentreY() + 1.0f;
 
-            g.setColour(juce::Colours::black.withAlpha(shouldDrawButtonAsHighlighted ? 0.35f : 0.2f));
-            g.fillEllipse(bounds.reduced(1.0f));
-
-            juce::Colour iconColour = locked
-                ? juce::Colour(0xFF00FF87)
-                : juce::Colours::white.withAlpha(shouldDrawButtonAsHighlighted ? 0.75f : 0.45f);
-            g.setColour(iconColour);
+            if (locked)
+            {
+                g.setColour(juce::Colour(0xFF00FF87).withAlpha(shouldDrawButtonAsHighlighted ? 1.0f : 0.9f));
+                g.fillEllipse(bounds.reduced(1.0f));
+                g.setColour(juce::Colour(0xFF09090B));
+            }
+            else
+            {
+                g.setColour(juce::Colours::black.withAlpha(shouldDrawButtonAsHighlighted ? 0.4f : 0.25f));
+                g.fillEllipse(bounds.reduced(1.0f));
+                g.setColour(juce::Colours::white.withAlpha(0.4f));
+                g.drawEllipse(bounds.reduced(1.0f), 1.0f);
+                g.setColour(juce::Colours::white.withAlpha(shouldDrawButtonAsHighlighted ? 0.8f : 0.5f));
+            }
 
             juce::Path shackle;
             shackle.addCentredArc(cX, cY - 3.5f, 3.0f, 3.0f, 0.0f,
@@ -199,16 +196,19 @@ public:
         }
 
         // NEW: reset icon (circular arrow) for the EQ's "flatten to
-        // neutral" button.
+        // neutral" button. FIX: outline/backdrop given more contrast to
+        // match the lock icons' visibility fix above.
         if (button.getName() == "RESET_EQ")
         {
             auto cX = bounds.getCentreX();
             auto cY = bounds.getCentreY();
 
-            g.setColour(juce::Colours::black.withAlpha(shouldDrawButtonAsHighlighted ? 0.35f : 0.2f));
+            g.setColour(juce::Colours::black.withAlpha(shouldDrawButtonAsHighlighted ? 0.4f : 0.25f));
             g.fillEllipse(bounds.reduced(1.0f));
+            g.setColour(juce::Colours::white.withAlpha(0.35f));
+            g.drawEllipse(bounds.reduced(1.0f), 1.0f);
 
-            g.setColour(juce::Colours::white.withAlpha(shouldDrawButtonAsHighlighted ? 0.85f : 0.55f));
+            g.setColour(juce::Colours::white.withAlpha(shouldDrawButtonAsHighlighted ? 0.95f : 0.7f));
             juce::Path arc;
             float r = 4.5f;
             arc.addCentredArc(cX, cY, r, r, 0.0f,
@@ -303,14 +303,6 @@ public:
     void drawButtonText (juce::Graphics& g, juce::TextButton& button, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
     {
         if (button.getName() == "SAVE" || button.getName() == "SETTINGS" || button.getName() == "BYPASS" || button.getName() == "LOCK" || button.getName() == "LOCK_EQ" || button.getName() == "RESET_EQ") return;
-
-        if (button.getName() == "SLOPE_BTN")
-        {
-            g.setFont(juce::FontOptions(11.0f).withName("Helvetica").withStyle("Bold"));
-            g.setColour(button.getToggleState() ? juce::Colour(0xFF09090B) : juce::Colours::white.withAlpha(0.5f));
-            g.drawText(button.getButtonText(), button.getLocalBounds(), juce::Justification::centred);
-            return;
-        }
 
         // NEW: each distortion mode gets its own small icon so the six
         // options are recognisable at a glance, not just six identical
@@ -575,8 +567,10 @@ private:
     // FIX: the graph (and its inset scope border) was clipping right against
     // the card's bottom edge, especially visible on a CUT-mode curve diving
     // all the way to filterGraphBottomY. Moved up a few pixels for
-    // breathing room.
-    static constexpr float filterGraphTopY = 316.0f;    // +18 dB
+    // breathing room. Also grown further upward now that the on-screen
+    // slope buttons (and the row they sat in) are gone -- that space goes
+    // to the graph instead.
+    static constexpr float filterGraphTopY = 296.0f;    // +18 dB
     static constexpr float filterGraphBottomY = 378.0f; // -18 dB (also the cut-mode floor)
     static constexpr float filterGraphMidY = (filterGraphTopY + filterGraphBottomY) * 0.5f; // 0 dB
 
@@ -593,15 +587,17 @@ private:
     enum class FilterHandle { none, low, bell1, bell2, high };
     FilterHandle draggingFilterHandle = FilterHandle::none;
     FilterHandle hoveredFilterHandle = FilterHandle::none;
-    // NEW: reference point for shift-drag Q adjustment (incremental delta
-    // between consecutive drag frames).
+    // Reference point for shift-drag Q adjustment and right-drag slope
+    // scrubbing (incremental delta between consecutive drag frames).
     juce::Point<float> lastDragPos;
+    // NEW: which button started the current drag -- left is always
+    // position/Q, right is reserved for LOW/HIGH's type-toggle (click) and
+    // slope-scrub (drag). Tracked explicitly rather than re-checking
+    // e.mods in mouseUp, since button state there isn't reliable.
+    bool rightButtonDrag = false;
+    float slopeDragAccum = 0.0f;
     void toggleBandType (const juce::String& typeParamID);
-
-    // NEW: filter slope, styled as a single segmented control. Only affects
-    // a band while it's set to Cut -- no effect on Shelf/Bell.
-    juce::TextButton slopeButtons[3];
-    juce::StringArray slopeButtonLabels = { "12", "24", "48" };
+    void cycleSlope (int direction);
 
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;

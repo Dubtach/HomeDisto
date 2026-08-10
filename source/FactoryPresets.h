@@ -96,6 +96,79 @@ namespace FactoryPresets
         });
 
         // ==========================================
+        // 0. HIGHLIGHTS -- shown first (right after the pinned Default),
+        // one flagship pick from each other category so a new user can
+        // hear the range of what this plugin does without having to dig
+        // through all 53 presets first. Each one duplicates the exact
+        // settings of its source preset (same category it's borrowed
+        // from noted in the comment) rather than being a new sound -- this
+        // is a shortcut/showcase, not new content.
+        // ==========================================
+        createDefault("0. Highlights", "1. Subtle Glue (from Mastering & Bus)", [&]() {
+            setMode(2.0f); // TAPE
+            setParam("DRIVE", 3.0f); setParam("MIX", 1.0f); setOut(-1.2f);
+            setParam("TONE", 0.05f); setParam("PUNCH", 0.1f);
+            setLow(25.0f, false, 0.0f);
+            setBell1(300.0f, -0.7f, 0.7f);
+            setBell2(9000.0f, 0.4f, 0.6f);
+            setHigh(20000.0f, false, 0.0f);
+        });
+        createDefault("0. Highlights", "2. Modern Bass Grunt (from Bass)", [&]() {
+            setMode(0.0f); // PUNCH
+            setParam("DRIVE", 10.0f); setParam("MIX", 1.0f); setOut(-6.3f);
+            setParam("TONE", 0.1f); setParam("PUNCH", 0.8f);
+            setLow(60.0f, true, 1.4f);
+            setBell1(400.0f, -1.1f, 0.8f);
+            setBell2(900.0f, 0.9f, 1.0f);
+            setHigh(8000.0f, false, 0.0f);
+        });
+        createDefault("0. Highlights", "3. Snare Crack (from Drums)", [&]() {
+            setMode(4.0f); // CRUNCH
+            setParam("DRIVE", 10.0f); setParam("MIX", 1.0f); setOut(-6.8f);
+            setParam("TONE", 0.5f); setParam("PUNCH", 0.6f);
+            setLow(150.0f, false, 0.0f);
+            setBell1(250.0f, 0.9f, 0.8f);
+            setBell2(4500.0f, 1.4f, 1.1f);
+            setHigh(12000.0f, false, 0.0f);
+        });
+        createDefault("0. Highlights", "4. Tube Vocal Presence (from Vocals)", [&]() {
+            setMode(1.0f); // TUBE
+            setParam("DRIVE", 4.5f); setParam("MIX", 1.0f); setOut(-2.6f);
+            setParam("TONE", 0.2f); setParam("PUNCH", 0.1f);
+            setLow(90.0f, false, 0.0f);
+            setBell1(300.0f, -0.9f, 0.8f);
+            setBell2(4000.0f, 1.4f, 1.0f);
+            setHigh(20000.0f, true, 0.9f);
+        });
+        createDefault("0. Highlights", "5. Heavy Guitar Chug (from Guitars)", [&]() {
+            setMode(4.0f); // CRUNCH
+            setParam("DRIVE", 18.0f); setParam("MIX", 1.0f); setOut(-10.8f);
+            setParam("TONE", 0.25f); setParam("PUNCH", 0.7f);
+            setLow(100.0f, false, 0.0f);
+            setBell1(250.0f, -0.9f, 0.8f);
+            setBell2(3500.0f, 0.9f, 1.0f);
+            setHigh(8000.0f, false, 0.0f);
+        });
+        createDefault("0. Highlights", "6. Acid Screamer FX (from Synths & FX)", [&]() {
+            setMode(5.0f); // FUZZ
+            setParam("DRIVE", 16.0f); setParam("MIX", 1.0f); setOut(-11.5f);
+            setParam("TONE", 0.5f); setParam("PUNCH", 0.7f);
+            setLow(80.0f, false, 0.0f);
+            setBell1(1000.0f, 0.9f, 2.0f);
+            setBell2(5000.0f, 0.9f, 1.2f);
+            setHigh(18000.0f, false, 0.0f);
+        });
+        createDefault("0. Highlights", "7. Warm Piano (from Synths & FX)", [&]() {
+            setMode(1.0f); // TUBE
+            setParam("DRIVE", 3.0f); setParam("MIX", 1.0f); setOut(-1.7f);
+            setParam("TONE", 0.1f); setParam("PUNCH", 0.1f);
+            setLow(35.0f, false, 0.0f);
+            setBell1(250.0f, 0.3f, 0.7f);
+            setBell2(4000.0f, 0.4f, 0.8f);
+            setHigh(10000.0f, true, 0.3f);
+        });
+
+        // ==========================================
         // 5. GUITARS
         // FIX: several of these were at 100% MIX, which -- combined with
         // heavy drive -- read as harsh/unpleasant as a *default* starting
