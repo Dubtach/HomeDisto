@@ -83,7 +83,7 @@ jobs:
         run: |
           # 1. Hardcode variables from CMakeLists.txt
           PROJECT_NAME="HomeDisto"
-          PRODUCT_NAME="Home Disto"
+          PRODUCT_NAME="Home-Disto"
           # 2. Read the version directly from the file!
           VERSION=$(cat VERSION | tr -d '[:space:]')
 
