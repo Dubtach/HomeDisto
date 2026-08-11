@@ -823,7 +823,7 @@ void HomeDistoAudioProcessor::setStateInformation (const void* data, int sizeInB
 juce::File HomeDistoAudioProcessor::getPresetDirectory()
 {
     juce::File documentsDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
-    juce::File presetDir = documentsDir.getChildFile("HomeDisto").getChildFile("Presets");
+    juce::File presetDir = documentsDir.getChildFile("Dubtach").getChildFile("Home-Disto").getChildFile("Presets");
     
     if (!presetDir.exists())
         presetDir.createDirectory();

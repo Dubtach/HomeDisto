@@ -8,13 +8,13 @@ set(PROJECT_NAME "HomeDisto")
 project(${PROJECT_NAME} VERSION 1.0.0)
 
 # Worry not, JUCE's PRODUCT_NAME can have spaces (and is what DAWs will display)
-set(PRODUCT_NAME "Home Disto")
+set(PRODUCT_NAME "Home-Disto")
 
 # Change me! Used for the MacOS bundle name and Installers
-set(COMPANY_NAME "Home")
+set(COMPANY_NAME "Dubtach")
 
 # Change me! Used for the MacOS bundle identifier (and signing)
-set(BUNDLE_ID "com.home.homedisto")
+set(BUNDLE_ID "com.dubtach.homedisto")
 
 # Change me! Set the plugin formats you want built
 set(FORMATS Standalone AU VST3 AUv3)
@@ -30,10 +30,11 @@ juce_add_plugin("${PROJECT_NAME}"
     COPY_PLUGIN_AFTER_BUILD TRUE
     
     # A four-character plugin id (First character MUST be uppercase for AU)
-    PLUGIN_MANUFACTURER_CODE Home
+    PLUGIN_MANUFACTURER_CODE Dubt
     
     # A unique four-character plugin id
-    PLUGIN_CODE Dist
+    PLUGIN_CODE Hdis
+    VST3_CATEGORIES Distortion
     
     FORMATS ${FORMATS}
     PRODUCT_NAME "${PRODUCT_NAME}"
