@@ -1123,7 +1123,7 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
     juce::Font titleFont = juce::FontOptions(26.0f).withName("Helvetica").withStyle("Bold");
     g.setFont(titleFont);
 
-    juce::String homeText = "Home";
+    juce::String homeText = "Home-";
     juce::String distoText = "Disto";
     int homeWidth = juce::GlyphArrangement::getStringWidthInt(titleFont, homeText);
     int distoWidth = juce::GlyphArrangement::getStringWidthInt(titleFont, distoText);
