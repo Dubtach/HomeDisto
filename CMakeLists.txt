@@ -54,6 +54,7 @@ target_sources("${PROJECT_NAME}" PRIVATE
 target_link_libraries("${PROJECT_NAME}" PRIVATE
     juce::juce_audio_utils
     juce::juce_audio_processors
+    juce::juce_cryptography
     juce::juce_dsp # --- FIX 2: Add the DSP module ---
 )
 
