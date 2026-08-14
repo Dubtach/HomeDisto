@@ -798,13 +798,26 @@ void HomeDistoAudioProcessorEditor::toggleBandType(const juce::String& typeParam
 // shift+drag on LOW/HIGH scrubs through these 3 options directly (see
 // mouseDrag). SLOPE is still a real, 3-choice APVTS parameter underneath;
 // this just steps it by +1/-1 with wraparound.
-void HomeDistoAudioProcessorEditor::cycleSlope(int direction)
+void HomeDistoAudioProcessorEditor::cycleSlope (int direction)
 {
-    auto* p = audioProcessor.apvts.getParameter("SLOPE");
-    if (p == nullptr) return;
-    int current = (int) audioProcessor.apvts.getRawParameterValue("SLOPE")->load();
-    int next = (current + direction + 3) % 3;
-    p->setValueNotifyingHost(next / 2.0f); // 3 choices -- normalized == index/(3-1)
+    // 1. Get the current slope index (0 = 12 dB, 1 = 24 dB, 2 = 48 dB)
+    int currentIndex = juce::roundToInt(audioProcessor.apvts.getRawParameterValue("SLOPE")->load());
+    
+    // 2. Add the drag direction and clamp it strictly between 0 and 2
+    // This entirely prevents the annoying 48 -> 12 or 12 -> 48 wrap-around.
+    int newIndex = juce::jlimit(0, 2, currentIndex + direction);
+    
+    // 3. Update the parameter only if the boundary hasn't been hit yet
+    if (newIndex != currentIndex)
+    {
+        if (auto* param = audioProcessor.apvts.getParameter("SLOPE"))
+        {
+            // Normalize the 0-2 index back to APVTS's expected 0.0 - 1.0 range
+            param->beginChangeGesture();
+            param->setValueNotifyingHost(param->convertTo0to1((float)newIndex));
+            param->endChangeGesture();
+        }
+    }
 }
 
 namespace
