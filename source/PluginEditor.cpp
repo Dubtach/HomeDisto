@@ -563,7 +563,7 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     audioProcessor.apvts.addParameterListener("EQ_HIGH_TYPE", this);
 
     // FIX: the on-screen 12/24/48 slope buttons are gone -- SLOPE is
-    // controlled directly on the graph now (right-drag LOW/HIGH), so a
+    // controlled directly on the graph now (shift+drag LOW/HIGH), so a
     // separate widget for it was redundant. Still a real APVTS parameter,
     // still needs a listener so automation/preset loads repaint the curve.
     audioProcessor.apvts.addParameterListener("SLOPE", this);
@@ -795,7 +795,7 @@ void HomeDistoAudioProcessorEditor::toggleBandType(const juce::String& typeParam
 }
 
 // NEW: replaces the old on-screen 12/24/48 dB/oct slope buttons entirely --
-// right-drag on LOW/HIGH scrubs through these 3 options directly (see
+// shift+drag on LOW/HIGH scrubs through these 3 options directly (see
 // mouseDrag). SLOPE is still a real, 3-choice APVTS parameter underneath;
 // this just steps it by +1/-1 with wraparound.
 void HomeDistoAudioProcessorEditor::cycleSlope(int direction)
@@ -839,15 +839,9 @@ void HomeDistoAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
     else if (pos.getDistanceFrom(highHandlePos())  < kFilterHandleHitRadius) draggingFilterHandle = FilterHandle::high;
     else draggingFilterHandle = FilterHandle::none;
 
-    // FIX: previously left-click alone had to do double duty -- a quick
-    // click toggled Cut/Shelf, a drag moved the node -- disambiguated only
-    // by how far the mouse moved before release, which made it easy to
-    // accidentally flip the type when you meant to just nudge it slightly.
-    // Left button is now ALWAYS a drag (position, or Q with shift); the
-    // right button is reserved entirely for the two discrete LOW/HIGH
-    // actions (type toggle on a right-click, slope on a right-drag), so
-    // there's no ambiguity between the two gestures anymore -- they're on
-    // different buttons.
+    // Left button is always a drag (position, or shift+drag for
+    // Q/slope -- see mouseDrag); right button is reserved for a single
+    // discrete action on LOW/HIGH: a click (not a drag) toggles Cut/Shelf.
     rightButtonDrag = e.mods.isRightButtonDown();
     slopeDragAccum = 0.0f;
 
@@ -859,36 +853,37 @@ void HomeDistoAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
 void HomeDistoAudioProcessorEditor::mouseDrag (const juce::MouseEvent& e)
 {
     if (draggingFilterHandle == FilterHandle::none) return;
+    if (rightButtonDrag) return; // right button has no drag gesture -- see mouseUp for its click action
 
-    // NEW: right-drag on LOW/HIGH scrubs through the SLOPE options
-    // (12/24/48 dB/oct) -- replaces the old on-screen slope buttons
-    // entirely, since this can control it directly on the node it affects.
-    if (rightButtonDrag && (draggingFilterHandle == FilterHandle::low || draggingFilterHandle == FilterHandle::high))
+    // Shift+drag adjusts the node's "shape" parameter instead of moving
+    // it: Q (bump width) on a bell, SLOPE (roll-off steepness) on
+    // LOW/HIGH -- drag up to increase, down to decrease, in both cases.
+    // FIX: slope scrubbing used to be a right-drag; moved to shift+drag so
+    // it lives on the same button/gesture as the bell Q control, and right
+    // stays a single, simple click-only action.
+    if (e.mods.isShiftDown())
     {
-        float deltaY = lastDragPos.y - e.position.y; // positive = dragged up
-        slopeDragAccum += deltaY;
-        constexpr float pxPerStep = 26.0f;
-        while (slopeDragAccum > pxPerStep)  { cycleSlope(+1); slopeDragAccum -= pxPerStep; }
-        while (slopeDragAccum < -pxPerStep) { cycleSlope(-1); slopeDragAccum += pxPerStep; }
-        lastDragPos = e.position;
-        repaint();
-        return;
-    }
-    if (rightButtonDrag) return; // right-drag on a bell isn't a defined gesture
-
-    // Shift+drag on a bell node adjusts its Q ("bump shape") instead of
-    // moving it -- drag up to narrow/increase, down to widen/decrease.
-    // Incremental frame-to-frame delta (not absolute Y position) so
-    // toggling shift mid-drag never causes a jump.
-    if (e.mods.isShiftDown() && (draggingFilterHandle == FilterHandle::bell1 || draggingFilterHandle == FilterHandle::bell2))
-    {
-        juce::Slider& qSlider = (draggingFilterHandle == FilterHandle::bell1) ? bell1QSlider : bell2QSlider;
-        float deltaY = lastDragPos.y - e.position.y; // positive = dragged up
-        float q = juce::jlimit(0.2f, 8.0f, (float) qSlider.getValue() + deltaY * 0.05f);
-        qSlider.setValue(q, juce::sendNotificationSync);
-        lastDragPos = e.position;
-        repaint();
-        return;
+        if (draggingFilterHandle == FilterHandle::bell1 || draggingFilterHandle == FilterHandle::bell2)
+        {
+            juce::Slider& qSlider = (draggingFilterHandle == FilterHandle::bell1) ? bell1QSlider : bell2QSlider;
+            float deltaY = lastDragPos.y - e.position.y; // positive = dragged up
+            float q = juce::jlimit(0.2f, 8.0f, (float) qSlider.getValue() + deltaY * 0.05f);
+            qSlider.setValue(q, juce::sendNotificationSync);
+            lastDragPos = e.position;
+            repaint();
+            return;
+        }
+        if (draggingFilterHandle == FilterHandle::low || draggingFilterHandle == FilterHandle::high)
+        {
+            float deltaY = lastDragPos.y - e.position.y; // positive = dragged up
+            slopeDragAccum += deltaY;
+            constexpr float pxPerStep = 26.0f;
+            while (slopeDragAccum > pxPerStep)  { cycleSlope(+1); slopeDragAccum -= pxPerStep; }
+            while (slopeDragAccum < -pxPerStep) { cycleSlope(-1); slopeDragAccum += pxPerStep; }
+            lastDragPos = e.position;
+            repaint();
+            return;
+        }
     }
     lastDragPos = e.position;
 
@@ -957,9 +952,10 @@ void HomeDistoAudioProcessorEditor::mouseDrag (const juce::MouseEvent& e)
 
 void HomeDistoAudioProcessorEditor::mouseUp (const juce::MouseEvent& e)
 {
-    // FIX: type-toggle moved off left-click entirely (see mouseDown) --
-    // now a plain right-click (not a right-drag, which scrubs slope
-    // instead) on LOW/HIGH toggles Cut/Shelf.
+    // Right button is a single, simple gesture: a click (not a drag) on
+    // LOW/HIGH toggles Cut/Shelf. Left button never gets here for that
+    // purpose -- it's exclusively drag (position, or shift+drag for
+    // Q/slope, handled entirely in mouseDrag).
     bool wasClick = e.getDistanceFromDragStart() < 4;
     if (wasClick && rightButtonDrag && draggingFilterHandle == FilterHandle::low)
         toggleBandType("EQ_LOW_TYPE");

@@ -587,13 +587,14 @@ private:
     enum class FilterHandle { none, low, bell1, bell2, high };
     FilterHandle draggingFilterHandle = FilterHandle::none;
     FilterHandle hoveredFilterHandle = FilterHandle::none;
-    // Reference point for shift-drag Q adjustment and right-drag slope
-    // scrubbing (incremental delta between consecutive drag frames).
+    // Reference point for shift-drag Q/slope adjustment (incremental delta
+    // between consecutive drag frames).
     juce::Point<float> lastDragPos;
-    // NEW: which button started the current drag -- left is always
-    // position/Q, right is reserved for LOW/HIGH's type-toggle (click) and
-    // slope-scrub (drag). Tracked explicitly rather than re-checking
-    // e.mods in mouseUp, since button state there isn't reliable.
+    // Which button started the current drag. Left is always position, or
+    // shift+drag for Q (bells)/slope (LOW/HIGH). Right has no drag gesture
+    // at all -- it's used only for a click (not drag) toggling Cut/Shelf on
+    // LOW/HIGH, checked in mouseUp. Tracked explicitly here rather than
+    // re-checking e.mods in mouseUp, since button state there isn't reliable.
     bool rightButtonDrag = false;
     float slopeDragAccum = 0.0f;
     void toggleBandType (const juce::String& typeParamID);

@@ -597,7 +597,17 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
                     // PUNCH: the plain reference clipper. Symmetric tanh --
                     // deliberately the "baseline" the other modes deviate
                     // from, so it stays simple.
-                    out = std::tanh(x) * (1.0f + currentPunch * 0.5f);
+                    // FIX: this used to also multiply by (1 + punch*0.5) --
+                    // an extra gain boost specific to this one mode, ON TOP
+                    // of the generic punch-scaled boost applied to every
+                    // mode further down (out += punch * 0.12 * out * |out|).
+                    // That's punch being counted twice for this mode only,
+                    // which is exactly why PUNCH mode read louder than the
+                    // others at matched settings -- it wasn't a mix/EQ
+                    // issue, it was this. Plain tanh now, same baseline as
+                    // every other mode; punch still affects it normally via
+                    // the shared generic boost like everywhere else.
+                    out = std::tanh(x);
                     break;
 
                 case 1:
