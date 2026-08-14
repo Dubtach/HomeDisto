@@ -17,6 +17,17 @@ HomeDistoAudioProcessor::HomeDistoAudioProcessor()
 {
     FactoryPresets::generateDefaults(*this);
 
+    // A brand-new plugin instance must start on the factory Default preset,
+    // not merely on the parameter defaults.  Mark the preset as active too,
+    // so the preset name and browser state are correct from the first frame.
+    {
+        const auto defaultPreset = getPresetDirectory()
+            .getChildFile("0. Default")
+            .getChildFile("Default.xml");
+        if (defaultPreset.existsAsFile())
+            loadPreset(defaultPreset);
+    }
+
     // Pre-allocate filter states to prevent null-dereferences
     auto lowCutCoeffs = juce::dsp::IIR::Coefficients<float>::makeHighPass(44100.0, 80.0f);
     auto highCutCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowPass(44100.0, 8000.0f);
@@ -791,6 +802,16 @@ void HomeDistoAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     apvts.state.setProperty("lockMix", lockMix.load(), nullptr);
     apvts.state.setProperty("lockEQ", lockEQ.load(), nullptr);
 
+    // Persist the active preset identity as well as its parameter values.
+    // Without this, a host can restore the sound correctly but the editor
+    // has no way to know which preset name should be displayed after the
+    // processor/editor is recreated.
+    apvts.state.setProperty("currentPresetPath",
+                            currentPresetFile.existsAsFile()
+                                ? currentPresetFile.getFullPathName()
+                                : juce::String(),
+                            nullptr);
+
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml (state.createXml());
     copyXmlToBinary (*xml, destData);
@@ -801,6 +822,17 @@ void HomeDistoAudioProcessor::setStateInformation (const void* data, int sizeInB
     std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
     if (xmlState != nullptr && xmlState->hasTagName (apvts.state.getType()))
     {
+        // Restore the active preset identity before the deferred ValueTree
+        // replacement. This keeps the preset name available immediately
+        // when an editor is created again.
+        const auto restoredPresetPath = xmlState->getStringAttribute("currentPresetPath");
+        if (restoredPresetPath.isNotEmpty())
+        {
+            const juce::File restoredPreset(restoredPresetPath);
+            if (restoredPreset.existsAsFile())
+                currentPresetFile = restoredPreset;
+        }
+
         // FIX: hosts are permitted to call setStateInformation() from any
         // thread -- some genuinely do this on a background project-loading
         // thread rather than the message thread. apvts.replaceState() swaps
