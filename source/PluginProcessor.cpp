@@ -888,7 +888,7 @@ bool HomeDistoAudioProcessor::isCurrentPresetModified()
     return !presetStatesMatch(state, currentPresetState);
 }
 
-juce::File HomeDistoAudioProcessor::getPresetDirectory()
+juce::File HomeDistoAudioProcessor::getPresetDirectory() const
 {
     juce::File documentsDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
     juce::File presetDir = documentsDir.getChildFile("Dubtach").getChildFile("Home-Disto").getChildFile("Presets");
@@ -917,10 +917,11 @@ std::map<juce::String, juce::Array<juce::File>> HomeDistoAudioProcessor::getAllP
     for (auto& pair : categories)
     {
         auto& filesInCategory = pair.second;
-        filesInCategory.sort([] (const juce::File& a, const juce::File& b)
+        auto comparator = [] (const juce::File& a, const juce::File& b)
         {
             return a.getFileNameWithoutExtension().compareNatural(b.getFileNameWithoutExtension()) < 0;
-        });
+        };
+        filesInCategory.sort(comparator);
     }
     return categories;
 }

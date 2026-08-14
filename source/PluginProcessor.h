@@ -30,7 +30,7 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     // Preset System Methods
-    juce::File getPresetDirectory();
+    juce::File getPresetDirectory() const;
     bool savePreset(const juce::String& name, bool overwriteExisting = false);
     bool deleteUserPreset(const juce::File& file);
     bool isFactoryPreset(const juce::File& file) const;
