@@ -917,10 +917,15 @@ std::map<juce::String, juce::Array<juce::File>> HomeDistoAudioProcessor::getAllP
     for (auto& pair : categories)
     {
         auto& filesInCategory = pair.second;
-        auto comparator = [] (const juce::File& a, const juce::File& b)
+        struct PresetFileComparator
         {
-            return a.getFileNameWithoutExtension().compareNatural(b.getFileNameWithoutExtension()) < 0;
+            int compareElements (const juce::File& a, const juce::File& b) const
+            {
+                return a.getFileNameWithoutExtension().compareNatural(b.getFileNameWithoutExtension());
+            }
         };
+
+        PresetFileComparator comparator;
         filesInCategory.sort(comparator);
     }
     return categories;
