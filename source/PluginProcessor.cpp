@@ -908,8 +908,19 @@ std::map<juce::String, juce::Array<juce::File>> HomeDistoAudioProcessor::getAllP
     for (auto& file : files)
     {
         juce::String category = file.getParentDirectory().getFileName();
-        if (category == dir.getFileName()) category = "Uncategorized";
+        if (category == dir.getFileName())
+            category = "Uncategorized";
         categories[category].add(file);
+    }
+
+    // Keep browser order deterministic across filesystems and DAWs.
+    for (auto& pair : categories)
+    {
+        auto& filesInCategory = pair.second;
+        filesInCategory.sort([] (const juce::File& a, const juce::File& b)
+        {
+            return a.getFileNameWithoutExtension().compareNatural(b.getFileNameWithoutExtension()) < 0;
+        });
     }
     return categories;
 }
@@ -924,22 +935,65 @@ juce::Array<juce::File> HomeDistoAudioProcessor::getFlatPresetList()
     return list;
 }
 
-void HomeDistoAudioProcessor::savePreset(const juce::String& name)
+bool HomeDistoAudioProcessor::savePreset(const juce::String& name, bool overwriteExisting)
 {
     juce::File userDir = getPresetDirectory().getChildFile("User");
-    if (!userDir.exists()) userDir.createDirectory();
+    if (!userDir.exists())
+        userDir.createDirectory();
+
+    juce::String cleanName = name.trim();
+    cleanName = cleanName.replaceCharacters("\\/:*?\"<>|", "_________");
+    cleanName = cleanName.trim();
+    if (cleanName.isEmpty())
+        return false;
+
+    // Avoid accidental overwrites unless the caller explicitly confirms one.
+    juce::File presetFile = userDir.getChildFile(cleanName + ".xml");
+    if (presetFile.existsAsFile() && !overwriteExisting)
+        return false;
 
     auto state = apvts.copyState();
     stripSessionProperties(state);
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
 
-    if (xml != nullptr)
+    if (xml == nullptr)
+        return false;
+
+    if (!xml->writeTo(presetFile))
+        return false;
+
+    currentPresetFile = presetFile;
+    currentPresetState = state.createCopy();
+    return true;
+}
+
+bool HomeDistoAudioProcessor::isFactoryPreset(const juce::File& file) const
+{
+    auto relative = file.getRelativePathFrom(getPresetDirectory());
+    auto separator = juce::File::getSeparatorString();
+    return !relative.startsWith("User" + separator);
+}
+
+bool HomeDistoAudioProcessor::deleteUserPreset(const juce::File& file)
+{
+    if (isFactoryPreset(file) || !file.existsAsFile())
+        return false;
+
+    auto userDir = getPresetDirectory().getChildFile("User");
+    if (file.getParentDirectory() != userDir)
+        return false;
+
+    const bool wasCurrent = (file == currentPresetFile);
+    if (!file.deleteFile())
+        return false;
+
+    if (wasCurrent)
     {
-        juce::File presetFile = userDir.getChildFile(name.trim() + ".xml");
-        xml->writeTo(presetFile);
-        currentPresetFile = presetFile;
-        currentPresetState = state.createCopy();
+        auto defaults = getPresetDirectory().getChildFile("0. Default").getChildFile("Default.xml");
+        if (defaults.existsAsFile())
+            loadPreset(defaults);
     }
+    return true;
 }
 
 void HomeDistoAudioProcessor::loadPreset(const juce::File& file)

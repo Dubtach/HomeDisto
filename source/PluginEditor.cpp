@@ -63,8 +63,11 @@ public:
             if (pair.first == "0. Default" && !pair.second.isEmpty())
             {
                 juce::File f = pair.second.getFirst();
-                defaultButton.setButtonText("DEFAULT (Quick Start)");
-                defaultButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF00FF87).withAlpha(0.14f));
+                const bool isDefaultActive = (processor.currentPresetFile == f);
+                defaultButton.setButtonText(isDefaultActive ? "DEFAULT  •  Active" : "DEFAULT  •  Quick Start");
+                defaultButton.setColour(juce::TextButton::buttonColourId,
+                                        isDefaultActive ? juce::Colour(0xFF00FF87).withAlpha(0.22f)
+                                                        : juce::Colour(0xFF00FF87).withAlpha(0.12f));
                 defaultButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xFF00FF87));
                 defaultButton.setLookAndFeel(&rowLnf);
                 defaultButton.onClick = [this, f] {
@@ -218,6 +221,16 @@ private:
         const int rowHeight = 24;
         const int headerHeight = 22;
 
+        const bool showDefault = filter.isEmpty() || defaultButton.getButtonText().toLowerCase().contains(filter)
+                                 || filter == "default";
+        defaultButton.setVisible(showDefault);
+
+        bool anyPresetVisible = showDefault;
+        for (auto& cat : categoryUIs)
+            for (auto& row : cat.rows)
+                if (filter.isEmpty() || row->getButtonText().toLowerCase().contains(filter))
+                    anyPresetVisible = true;
+
         for (auto& cat : categoryUIs)
         {
             bool anyVisibleInCategory = false;
@@ -246,6 +259,26 @@ private:
         }
 
         content->setSize(width, juce::jmax(y, viewport.getHeight()));
+
+        if (!anyPresetVisible)
+        {
+            static const juce::String noResultsText = "No presets found";
+            if (noResultsLabel == nullptr)
+            {
+                noResultsLabel = std::make_unique<juce::Label>();
+                noResultsLabel->setText(noResultsText, juce::dontSendNotification);
+                noResultsLabel->setJustificationType(juce::Justification::centred);
+                noResultsLabel->setFont(juce::FontOptions(12.0f));
+                noResultsLabel->setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.45f));
+                content->addAndMakeVisible(*noResultsLabel);
+            }
+            noResultsLabel->setVisible(true);
+            noResultsLabel->setBounds(0, 8, width, 28);
+        }
+        else if (noResultsLabel != nullptr)
+        {
+            noResultsLabel->setVisible(false);
+        }
     }
 
     HomeDistoAudioProcessorEditor& editor;
@@ -261,6 +294,7 @@ private:
     std::unique_ptr<juce::Component> content;
     std::vector<CategoryUI> categoryUIs;
     juce::TextButton* activeRow = nullptr; // for auto-scroll-to-active on open
+    std::unique_ptr<juce::Label> noResultsLabel;
 };
 
 // NEW: settings popup content. Owned by the CallOutBox that shows it (see
@@ -373,11 +407,42 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
         rawAlert->enterModalState(true, juce::ModalCallbackFunction::create([this, rawAlert](int result) {
             if (result == 1) 
             {
-                juce::String presetName = rawAlert->getTextEditorContents("presetName");
-                if (presetName.isNotEmpty()) 
+                juce::String presetName = rawAlert->getTextEditorContents("presetName").trim();
+                if (presetName.isNotEmpty())
                 {
-                    audioProcessor.savePreset(presetName);
-                    updatePresetName(); 
+                    auto userDir = audioProcessor.getPresetDirectory().getChildFile("User");
+                    auto cleanName = presetName.replaceCharacters("\\/:*?\"<>|", "_________").trim();
+                    auto targetFile = userDir.getChildFile(cleanName + ".xml");
+
+                    if (targetFile.existsAsFile())
+                    {
+                        auto confirm = std::make_unique<juce::AlertWindow>(
+                            "Overwrite Preset?",
+                            "A user preset with this name already exists. Overwrite it?",
+                            juce::AlertWindow::WarningIcon);
+                        confirm->addButton("Overwrite", 1, juce::KeyPress(juce::KeyPress::returnKey, 0, 0));
+                        confirm->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey, 0, 0));
+
+                        auto* confirmAlert = confirm.release();
+                        confirmAlert->enterModalState(true, juce::ModalCallbackFunction::create(
+                            [this, confirmAlert, presetName](int confirmResult)
+                            {
+                                if (confirmResult == 1)
+                                {
+                                    audioProcessor.savePreset(presetName, true);
+                                    updatePresetName();
+                                }
+                                delete confirmAlert;
+                            }));
+                    }
+                    else if (!audioProcessor.savePreset(presetName, false))
+                    {
+                        updatePresetName();
+                    }
+                    else
+                    {
+                        updatePresetName();
+                    }
                 }
             }
             delete rawAlert;

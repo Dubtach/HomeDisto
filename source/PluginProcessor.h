@@ -31,7 +31,9 @@ public:
 
     // Preset System Methods
     juce::File getPresetDirectory();
-    void savePreset(const juce::String& name);
+    bool savePreset(const juce::String& name, bool overwriteExisting = false);
+    bool deleteUserPreset(const juce::File& file);
+    bool isFactoryPreset(const juce::File& file) const;
     void loadPreset(const juce::File& file);
     
     std::map<juce::String, juce::Array<juce::File>> getAllPresetsCategorized();
