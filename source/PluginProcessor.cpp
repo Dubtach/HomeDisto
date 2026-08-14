@@ -17,16 +17,14 @@ HomeDistoAudioProcessor::HomeDistoAudioProcessor()
 {
     FactoryPresets::generateDefaults(*this);
 
-    // A brand-new plugin instance must start on the factory Default preset,
-    // not merely on the parameter defaults.  Mark the preset as active too,
-    // so the preset name and browser state are correct from the first frame.
-    {
-        const auto defaultPreset = getPresetDirectory()
-            .getChildFile("0. Default")
-            .getChildFile("Default.xml");
-        if (defaultPreset.existsAsFile())
-            loadPreset(defaultPreset);
-    }
+    // Every fresh plugin instance starts on the actual factory Default preset,
+    // rather than merely relying on APVTS parameter defaults. This keeps the
+    // sound, preset browser name, and preset identity in sync.
+    auto defaultPreset = getPresetDirectory()
+        .getChildFile("0. Default")
+        .getChildFile("Default.xml");
+    if (defaultPreset.existsAsFile())
+        loadPreset(defaultPreset);
 
     // Pre-allocate filter states to prevent null-dereferences
     auto lowCutCoeffs = juce::dsp::IIR::Coefficients<float>::makeHighPass(44100.0, 80.0f);
@@ -789,30 +787,19 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
 
 void HomeDistoAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    // FIX: lockOutput/lockMix/lockEQ were plain in-memory atomics with no
-    // persistence at all -- they survive the editor being closed/reopened
-    // (the processor itself stays alive for that), but a real session
-    // save/close/reopen, or any host that reconstructs the processor,
-    // silently lost them. They're intentionally NOT APVTS parameters (a
-    // host shouldn't be able to automate "lock this knob"), but they still
-    // need to be part of the saved state -- stored as plain custom
-    // properties directly on the same ValueTree, so they ride along with
-    // everything else through copyState()/replaceState().
-    apvts.state.setProperty("lockOutput", lockOutput.load(), nullptr);
-    apvts.state.setProperty("lockMix", lockMix.load(), nullptr);
-    apvts.state.setProperty("lockEQ", lockEQ.load(), nullptr);
-
-    // Persist the active preset identity as well as its parameter values.
-    // Without this, a host can restore the sound correctly but the editor
-    // has no way to know which preset name should be displayed after the
-    // processor/editor is recreated.
-    apvts.state.setProperty("currentPresetPath",
-                            currentPresetFile.existsAsFile()
-                                ? currentPresetFile.getFullPathName()
-                                : juce::String(),
-                            nullptr);
-
+    // Keep session/UI metadata in the DAW state, but out of the preset files.
+    // The path is relative to our preset root so sessions remain portable if
+    // the user's Documents location changes or the project moves machines.
     auto state = apvts.copyState();
+    state.setProperty("lockOutput", lockOutput.load(), nullptr);
+    state.setProperty("lockMix", lockMix.load(), nullptr);
+    state.setProperty("lockEQ", lockEQ.load(), nullptr);
+
+    juce::String presetPath;
+    if (currentPresetFile.existsAsFile())
+        presetPath = currentPresetFile.getRelativePathFrom(getPresetDirectory());
+    state.setProperty("currentPresetPath", presetPath, nullptr);
+
     std::unique_ptr<juce::XmlElement> xml (state.createXml());
     copyXmlToBinary (*xml, destData);
 }
@@ -822,44 +809,83 @@ void HomeDistoAudioProcessor::setStateInformation (const void* data, int sizeInB
     std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
     if (xmlState != nullptr && xmlState->hasTagName (apvts.state.getType()))
     {
-        // Restore the active preset identity before the deferred ValueTree
-        // replacement. This keeps the preset name available immediately
-        // when an editor is created again.
-        const auto restoredPresetPath = xmlState->getStringAttribute("currentPresetPath");
-        if (restoredPresetPath.isNotEmpty())
-        {
-            const juce::File restoredPreset(restoredPresetPath);
-            if (restoredPreset.existsAsFile())
-                currentPresetFile = restoredPreset;
-        }
-
-        // FIX: hosts are permitted to call setStateInformation() from any
-        // thread -- some genuinely do this on a background project-loading
-        // thread rather than the message thread. apvts.replaceState() swaps
-        // out the entire parameter ValueTree and rewires its internal
-        // listeners; it is only safe to call on the message thread. Doing
-        // that swap concurrently with the audio thread reading parameters
-        // is exactly the "XML parser overwriting variables the audio thread
-        // is reading" crash scenario. Parsing the XML into a standalone
-        // ValueTree is self-contained and safe on any thread; only the
-        // actual replaceState() call needs to be deferred.
+        // Parse first; the ValueTree swap itself is deferred to the message
+        // thread because hosts are allowed to call this from a background
+        // thread while the audio thread is running.
         juce::ValueTree newState = juce::ValueTree::fromXml (*xmlState);
 
-        // Read the lock flags now (cheap, thread-safe -- just reading
-        // properties off a standalone ValueTree), defaulting to off for
-        // older saves made before this existed.
         bool newLockOutput = newState.hasProperty("lockOutput") && (bool) newState.getProperty("lockOutput");
         bool newLockMix    = newState.hasProperty("lockMix")    && (bool) newState.getProperty("lockMix");
         bool newLockEQ     = newState.hasProperty("lockEQ")     && (bool) newState.getProperty("lockEQ");
+        juce::String savedPresetPath = newState.getProperty("currentPresetPath").toString();
 
-        juce::MessageManager::callAsync ([this, newState, newLockOutput, newLockMix, newLockEQ]() mutable
+        juce::MessageManager::callAsync ([this, newState, newLockOutput, newLockMix,
+                                          newLockEQ, savedPresetPath]() mutable
         {
             apvts.replaceState (newState);
             lockOutput.store(newLockOutput);
             lockMix.store(newLockMix);
             lockEQ.store(newLockEQ);
+
+            currentPresetFile = {};
+            if (savedPresetPath.isNotEmpty())
+            {
+                auto candidate = getPresetDirectory().getChildFile(savedPresetPath);
+                if (candidate.existsAsFile())
+                    currentPresetFile = candidate;
+            }
+
+            // Restored host state is the user's saved working state. Treat it
+            // as clean, even when a lock intentionally kept one or more
+            // controls different from the file on disk.
+            currentPresetState = apvts.copyState();
+            stripSessionProperties(currentPresetState);
+
+            // Refresh an already-open editor immediately. This closes the
+            // old gap where the audio state restored correctly but the preset
+            // name/lock icons stayed stale until the editor was reconstructed.
+            if (auto* editor = dynamic_cast<HomeDistoAudioProcessorEditor*>(getActiveEditor()))
+                editor->refreshFromProcessorState();
         });
     }
+}
+
+void HomeDistoAudioProcessor::stripSessionProperties(juce::ValueTree& state)
+{
+    state.removeProperty("lockOutput", nullptr);
+    state.removeProperty("lockMix", nullptr);
+    state.removeProperty("lockEQ", nullptr);
+    state.removeProperty("currentPresetPath", nullptr);
+}
+
+bool HomeDistoAudioProcessor::presetStatesMatch(const juce::ValueTree& a, const juce::ValueTree& b)
+{
+    if (a.getType() != b.getType() || a.getNumChildren() != b.getNumChildren())
+        return false;
+
+    for (int i = 0; i < a.getNumChildren(); ++i)
+    {
+        auto ca = a.getChild(i);
+        auto id = ca.getProperty("id").toString();
+        auto cb = b.getChildWithProperty("id", id);
+        if (!cb.isValid())
+            return false;
+
+        if (std::abs((double) ca.getProperty("value") - (double) cb.getProperty("value")) > 0.00001)
+            return false;
+    }
+
+    return true;
+}
+
+bool HomeDistoAudioProcessor::isCurrentPresetModified()
+{
+    if (!currentPresetFile.existsAsFile() || !currentPresetState.isValid())
+        return false;
+
+    auto state = apvts.copyState();
+    stripSessionProperties(state);
+    return !presetStatesMatch(state, currentPresetState);
 }
 
 juce::File HomeDistoAudioProcessor::getPresetDirectory()
@@ -902,34 +928,30 @@ void HomeDistoAudioProcessor::savePreset(const juce::String& name)
 {
     juce::File userDir = getPresetDirectory().getChildFile("User");
     if (!userDir.exists()) userDir.createDirectory();
-    
+
     auto state = apvts.copyState();
+    stripSessionProperties(state);
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
-    
+
     if (xml != nullptr)
     {
-        juce::File presetFile = userDir.getChildFile(name + ".xml");
+        juce::File presetFile = userDir.getChildFile(name.trim() + ".xml");
         xml->writeTo(presetFile);
         currentPresetFile = presetFile;
+        currentPresetState = state.createCopy();
     }
 }
 
 void HomeDistoAudioProcessor::loadPreset(const juce::File& file)
 {
-    // NOTE: unlike setStateInformation (which a host can call from any
-    // thread), this is only ever invoked from editor button/menu callbacks,
-    // which JUCE guarantees run on the message thread -- so calling
-    // apvts.replaceState() directly here is safe as written. If this is
-    // ever called from anywhere else, route it through the same
-    // MessageManager::callAsync pattern used in setStateInformation.
+    // Preset selection is a UI/message-thread operation.
     if (file.existsAsFile())
     {
         std::unique_ptr<juce::XmlElement> xmlState = juce::XmlDocument::parse(file);
-        
         if (xmlState != nullptr && xmlState->hasTagName(apvts.state.getType()))
         {
-            // NEW: capture the current OUT/MIX/EQ values before the preset
-            // overwrites them, so locked knobs can be restored afterward.
+            // Preserve locked controls while replacing everything else with
+            // the preset. Lock metadata itself is never part of the preset.
             float savedOutDb = apvts.getRawParameterValue("OUT")->load();
             float savedMix   = apvts.getRawParameterValue("MIX")->load();
 
@@ -943,7 +965,9 @@ void HomeDistoAudioProcessor::loadPreset(const juce::File& file)
             for (int i = 0; i < 12; ++i)
                 savedEq[i] = apvts.getRawParameterValue(eqParamIDs[i])->load();
 
-            apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+            auto presetState = juce::ValueTree::fromXml(*xmlState);
+            stripSessionProperties(presetState);
+            apvts.replaceState(presetState);
             currentPresetFile = file;
 
             if (lockOutput.load())
@@ -960,6 +984,11 @@ void HomeDistoAudioProcessor::loadPreset(const juce::File& file)
                     if (auto* p = apvts.getParameter(eqParamIDs[i]))
                         p->setValueNotifyingHost(p->convertTo0to1(savedEq[i]));
             }
+
+            // Cache the actual post-lock state so a newly loaded preset starts
+            // clean; changing a parameter afterwards will produce the usual *.
+            currentPresetState = apvts.copyState();
+            stripSessionProperties(currentPresetState);
         }
     }
 }

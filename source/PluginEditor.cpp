@@ -594,12 +594,32 @@ HomeDistoAudioProcessorEditor::~HomeDistoAudioProcessorEditor()
     setLookAndFeel(nullptr); 
 }
 
+void HomeDistoAudioProcessorEditor::refreshFromProcessorState()
+{
+    updatePresetName();
+    outputLockButton.setToggleState(audioProcessor.lockOutput.load(), juce::dontSendNotification);
+    mixLockButton.setToggleState(audioProcessor.lockMix.load(), juce::dontSendNotification);
+    eqLockButton.setToggleState(audioProcessor.lockEQ.load(), juce::dontSendNotification);
+
+    // Refresh the editor-facing controls after a host state restore, not just
+    // after the editor itself is constructed.
+    for (int i = 0; i < 6; ++i)
+        modeButtons[i].setToggleState(i == (int) audioProcessor.apvts.getRawParameterValue("MODE")->load(),
+                                      juce::dontSendNotification);
+    repaint();
+}
+
 void HomeDistoAudioProcessorEditor::updatePresetName()
 {
     if (audioProcessor.currentPresetFile.existsAsFile())
-        presetMenuButton.setButtonText(audioProcessor.currentPresetFile.getFileNameWithoutExtension());
+    {
+        auto name = audioProcessor.currentPresetFile.getFileNameWithoutExtension();
+        if (audioProcessor.isCurrentPresetModified())
+            name += "*";
+        presetMenuButton.setButtonText(name);
+    }
     else
-        presetMenuButton.setButtonText("Select Preset...");
+        presetMenuButton.setButtonText("Custom");
 
     // NEW: recalibrate AUTO's baseline to the just-loaded preset's own
     // DRIVE/TONE/PUNCH/MODE values, WITHOUT touching OUTPUT. Presets already
@@ -625,6 +645,22 @@ void HomeDistoAudioProcessorEditor::showPresetMenu()
 
 void HomeDistoAudioProcessorEditor::parameterChanged (const juce::String& parameterID, float newValue)
 {
+    // Mark the preset display as modified when real parameter values differ
+    // from the loaded reference state. Session-only flags (locks/path) are
+    // deliberately excluded by the processor comparison.
+    juce::MessageManager::callAsync([this]() {
+        if (audioProcessor.currentPresetFile.existsAsFile())
+        {
+            auto name = audioProcessor.currentPresetFile.getFileNameWithoutExtension();
+            if (audioProcessor.isCurrentPresetModified())
+                name += "*";
+            presetMenuButton.setButtonText(name);
+        }
+        else
+        {
+            presetMenuButton.setButtonText("Custom");
+        }
+    });
     if (parameterID == "MODE")
     {
         juce::MessageManager::callAsync([this, newValue]() {

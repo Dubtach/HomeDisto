@@ -501,6 +501,7 @@ public:
     // needs to call this after loading a preset from its own button
     // callbacks, so it has to be public rather than private.
     void updatePresetName();
+    void refreshFromProcessorState();
 
 private:
     HomeDistoAudioProcessor& audioProcessor;

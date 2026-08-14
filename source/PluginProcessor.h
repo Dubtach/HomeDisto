@@ -38,6 +38,7 @@ public:
     juce::Array<juce::File> getFlatPresetList();
     void nextPreset();
     void prevPreset();
+    bool isCurrentPresetModified();
     
     juce::File currentPresetFile;
     juce::AudioProcessorValueTreeState apvts;
@@ -58,6 +59,14 @@ public:
     std::atomic<bool> lockEQ { false };
 
 private:
+    // Clean reference state for the currently loaded preset. This excludes
+    // session/UI metadata and is used only to detect real preset edits.
+    juce::ValueTree currentPresetState;
+
+    static void stripSessionProperties(juce::ValueTree& state);
+    static bool presetStatesMatch(const juce::ValueTree& a, const juce::ValueTree& b);
+
+
     juce::AudioProcessorValueTreeState::ParameterLayout createParameters();
 
     // NEW: DC blocker. TUBE mode intentionally clips the positive and
