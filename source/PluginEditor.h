@@ -173,7 +173,7 @@ public:
 
             if (locked)
             {
-                g.setColour(juce::Colour(0xFF00FF87).withAlpha(shouldDrawButtonAsHighlighted ? 1.0f : 0.9f));
+                g.setColour(juce::Colour(0xFF00E5FF).withAlpha(shouldDrawButtonAsHighlighted ? 1.0f : 0.9f));
                 g.fillEllipse(bounds.reduced(1.0f));
                 g.setColour(juce::Colour(0xFF09090B));
             }
