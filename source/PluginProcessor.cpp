@@ -360,6 +360,24 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     if (apvts.getRawParameterValue("BYPASS")->load() > 0.5f)
         return;
 
+    const bool eqUnlocked = licenseManager.isActivated();
+    if (eqUnlocked != lastEqLicenseState)
+    {
+        for (auto& stage : lowCutStages)  stage.reset();
+        for (auto& stage : highCutStages) stage.reset();
+        for (auto& stage : dryLowCutStages)  stage.reset();
+        for (auto& stage : dryHighCutStages) stage.reset();
+        lowShelfFilter.reset();
+        highShelfFilter.reset();
+        bell1Filter.reset();
+        bell2Filter.reset();
+        dryLowShelfFilter.reset();
+        dryHighShelfFilter.reset();
+        dryBell1Filter.reset();
+        dryBell2Filter.reset();
+        lastEqLicenseState = eqUnlocked;
+    }
+
     float driveDb = apvts.getRawParameterValue("DRIVE")->load();
     float tone = apvts.getRawParameterValue("TONE")->load();
     float mix = apvts.getRawParameterValue("MIX")->load();
@@ -458,13 +476,16 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     juce::dsp::ProcessContextReplacing<float> dryContext (dryBlock);
 
     // REDESIGNED: this is now a standard 4-band EQ shaping tone BEFORE the
-    // distortion stage, applied to the whole wet signal (see the header
-    // comment above the filter members for why the old "only this band
-    // gets distorted" subtraction trick isn't compatible with shelves/bells).
-    bell1Filter.process(context);
-    bell2Filter.process(context);
-    dryBell1Filter.process(dryContext);
-    dryBell2Filter.process(dryContext);
+    // distortion stage. Free mode keeps all EQ parameters visible to the
+    // host/preset system, but the actual EQ processing is bypassed until the
+    // offline license has been activated.
+    if (eqUnlocked)
+    {
+        bell1Filter.process(context);
+        bell2Filter.process(context);
+        dryBell1Filter.process(dryContext);
+        dryBell2Filter.process(dryContext);
+    }
 
     // SLOPE picks how many identical cut stages get cascaded for a
     // steeper roll-off: 1 stage = 12 dB/oct, 2 = 24, 4 = 48. Only relevant
@@ -482,11 +503,14 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         lastSlopeStageCount = slopeStageCount;
     }
 
-    if (lowType == 0) { for (int i = 0; i < slopeStageCount; ++i) { lowCutStages[i].process(context); dryLowCutStages[i].process(dryContext); } }
-    else               { lowShelfFilter.process(context); dryLowShelfFilter.process(dryContext); }
+    if (eqUnlocked)
+    {
+        if (lowType == 0) { for (int i = 0; i < slopeStageCount; ++i) { lowCutStages[i].process(context); dryLowCutStages[i].process(dryContext); } }
+        else               { lowShelfFilter.process(context); dryLowShelfFilter.process(dryContext); }
 
-    if (highType == 0) { for (int i = 0; i < slopeStageCount; ++i) { highCutStages[i].process(context); dryHighCutStages[i].process(dryContext); } }
-    else                { highShelfFilter.process(context); dryHighShelfFilter.process(dryContext); }
+        if (highType == 0) { for (int i = 0; i < slopeStageCount; ++i) { highCutStages[i].process(context); dryHighCutStages[i].process(dryContext); } }
+        else                { highShelfFilter.process(context); dryHighShelfFilter.process(dryContext); }
+    }
 
     // --- FIX: PRE-EQ BLOWUP PROTECTION ---
     // Protects against IIR filters exploding due to rapid automation sweeps.

@@ -477,6 +477,9 @@ public:
     HomeDistoAudioProcessorEditor (HomeDistoAudioProcessor&);
     ~HomeDistoAudioProcessorEditor() override;
 
+    void showActivationDialog();
+    void updateLicenseUI();
+
     void paint (juce::Graphics&) override;
     void paintOverChildren (juce::Graphics&) override;
     void resized() override;

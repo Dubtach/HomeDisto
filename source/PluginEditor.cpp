@@ -643,6 +643,7 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
     audioProcessor.apvts.addParameterListener("MIX", this);
     audioProcessor.apvts.addParameterListener("AUTO", this);
     recalibrateAutoBaseline();
+    updateLicenseUI();
 }
 
 HomeDistoAudioProcessorEditor::~HomeDistoAudioProcessorEditor()
@@ -659,12 +660,66 @@ HomeDistoAudioProcessorEditor::~HomeDistoAudioProcessorEditor()
     setLookAndFeel(nullptr); 
 }
 
+void HomeDistoAudioProcessorEditor::updateLicenseUI()
+{
+    const bool unlocked = audioProcessor.getLicenseManager().isActivated();
+    eqResetButton.setEnabled(unlocked);
+    eqLockButton.setEnabled(unlocked);
+    repaint(20, 265, 230, 125);
+}
+
+void HomeDistoAudioProcessorEditor::showActivationDialog()
+{
+    if (audioProcessor.getLicenseManager().isActivated())
+        return;
+
+    auto alert = std::make_unique<juce::AlertWindow>(
+        "Unlock Home-Disto EQ",
+        "Enter the activation code from your purchase email.",
+        juce::AlertWindow::NoIcon);
+    alert->addTextEditor("activationCode", "", "Activation Code:", false);
+    if (auto* editor = alert->getTextEditor("activationCode"))
+    {
+        editor->setMultiLine(false);
+        editor->setReturnKeyStartsNewLine(false);
+    }
+    alert->addButton("ACTIVATE", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    alert->addButton("CANCEL", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    auto* rawAlert = alert.release();
+    rawAlert->enterModalState(true, juce::ModalCallbackFunction::create([this, rawAlert](int result)
+    {
+        if (result == 1)
+        {
+            const auto code = rawAlert->getTextEditorContents("activationCode").trim();
+            if (audioProcessor.getLicenseManager().activate(code))
+            {
+                updateLicenseUI();
+                auto message = juce::String("EQ is now unlocked.");
+                auto name = audioProcessor.getLicenseManager().getLicenseeName();
+                if (name.isNotEmpty())
+                    message += "\n\nLicensed to: " + name;
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                                                       "Home-Disto Activated", message);
+            }
+            else
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                       "Activation Failed",
+                                                       "That activation code is not valid for Home-Disto.");
+            }
+        }
+        delete rawAlert;
+    }));
+}
+
 void HomeDistoAudioProcessorEditor::refreshFromProcessorState()
 {
     updatePresetName();
     outputLockButton.setToggleState(audioProcessor.lockOutput.load(), juce::dontSendNotification);
     mixLockButton.setToggleState(audioProcessor.lockMix.load(), juce::dontSendNotification);
     eqLockButton.setToggleState(audioProcessor.lockEQ.load(), juce::dontSendNotification);
+    updateLicenseUI();
 
     // Refresh the editor-facing controls after a host state restore, not just
     // after the editor itself is constructed.
@@ -888,6 +943,9 @@ juce::Point<float> HomeDistoAudioProcessorEditor::bell2HandlePos()
 
 void HomeDistoAudioProcessorEditor::toggleBandType(const juce::String& typeParamID)
 {
+    if (!audioProcessor.getLicenseManager().isActivated())
+        return;
+
     auto* p = audioProcessor.apvts.getParameter(typeParamID);
     if (p == nullptr) return;
     int current = (int) audioProcessor.apvts.getRawParameterValue(typeParamID)->load();
@@ -928,6 +986,13 @@ namespace
 
 void HomeDistoAudioProcessorEditor::mouseMove (const juce::MouseEvent& e)
 {
+    const juce::Rectangle<float> eqBounds(20.0f, 265.0f, 230.0f, 125.0f);
+    if (!audioProcessor.getLicenseManager().isActivated() && eqBounds.contains(e.position))
+    {
+        setMouseCursor(juce::MouseCursor::PointingHandCursor);
+        return;
+    }
+
     auto pos = e.position;
     FilterHandle newHover = FilterHandle::none;
     if      (pos.getDistanceFrom(lowHandlePos())   < kFilterHandleHitRadius) newHover = FilterHandle::low;
@@ -946,6 +1011,15 @@ void HomeDistoAudioProcessorEditor::mouseMove (const juce::MouseEvent& e)
 
 void HomeDistoAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
 {
+    const juce::Rectangle<float> eqBounds(20.0f, 265.0f, 230.0f, 125.0f);
+    if (!audioProcessor.getLicenseManager().isActivated() && eqBounds.contains(e.position))
+    {
+        draggingFilterHandle = FilterHandle::none;
+        rightButtonDrag = false;
+        showActivationDialog();
+        return;
+    }
+
     auto pos = e.position;
     if      (pos.getDistanceFrom(lowHandlePos())   < kFilterHandleHitRadius) draggingFilterHandle = FilterHandle::low;
     else if (pos.getDistanceFrom(bell1HandlePos()) < kFilterHandleHitRadius) draggingFilterHandle = FilterHandle::bell1;
@@ -966,6 +1040,7 @@ void HomeDistoAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
 
 void HomeDistoAudioProcessorEditor::mouseDrag (const juce::MouseEvent& e)
 {
+    if (!audioProcessor.getLicenseManager().isActivated()) return;
     if (draggingFilterHandle == FilterHandle::none) return;
     if (rightButtonDrag) return; // right button has no drag gesture -- see mouseUp for its click action
 
@@ -1066,6 +1141,13 @@ void HomeDistoAudioProcessorEditor::mouseDrag (const juce::MouseEvent& e)
 
 void HomeDistoAudioProcessorEditor::mouseUp (const juce::MouseEvent& e)
 {
+    if (!audioProcessor.getLicenseManager().isActivated())
+    {
+        draggingFilterHandle = FilterHandle::none;
+        rightButtonDrag = false;
+        return;
+    }
+
     // Right button is a single, simple gesture: a click (not a drag) on
     // LOW/HIGH toggles Cut/Shelf. Left button never gets here for that
     // purpose -- it's exclusively drag (position, or shift+drag for
@@ -1083,6 +1165,9 @@ void HomeDistoAudioProcessorEditor::mouseUp (const juce::MouseEvent& e)
 
 void HomeDistoAudioProcessorEditor::mouseDoubleClick (const juce::MouseEvent& e)
 {
+    if (!audioProcessor.getLicenseManager().isActivated())
+        return;
+
     // NEW: double-clicking any node resets it to baseline (0 dB) --
     // matches exactly what the EQ reset button does for that one node:
     // LOW/HIGH get their gain zeroed AND their frequency returned to the
@@ -1121,6 +1206,9 @@ void HomeDistoAudioProcessorEditor::mouseDoubleClick (const juce::MouseEvent& e)
 
 void HomeDistoAudioProcessorEditor::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
 {
+    if (!audioProcessor.getLicenseManager().isActivated())
+        return;
+
     auto pos = e.position;
     juce::Slider* qSlider = nullptr;
 
@@ -1512,6 +1600,35 @@ void HomeDistoAudioProcessorEditor::paint (juce::Graphics& g)
 
 void HomeDistoAudioProcessorEditor::paintOverChildren(juce::Graphics& g)
 {
+    if (!audioProcessor.getLicenseManager().isActivated())
+    {
+        const juce::Rectangle<float> eqBounds(20.0f, 265.0f, 230.0f, 125.0f);
+
+        g.setColour(juce::Colour(0xFF09090B).withAlpha(0.92f));
+        g.fillRoundedRectangle(eqBounds, 6.0f);
+        g.setColour(juce::Colour(0xFF00FF87).withAlpha(0.35f));
+        g.drawRoundedRectangle(eqBounds.reduced(1.0f), 6.0f, 1.5f);
+
+        const auto centre = eqBounds.getCentre();
+        g.setColour(juce::Colour(0xFF00FF87));
+        juce::Path shackle;
+        shackle.addCentredArc(centre.x, centre.y - 8.0f, 8.0f, 8.0f, 0.0f,
+                              juce::MathConstants<float>::pi,
+                              juce::MathConstants<float>::twoPi, true);
+        g.strokePath(shackle, juce::PathStrokeType(2.2f));
+        g.fillRoundedRectangle(centre.x - 10.0f, centre.y - 1.0f, 20.0f, 16.0f, 3.0f);
+
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::FontOptions(18.0f).withName("Helvetica").withStyle("Bold"));
+        g.drawText("EQ LOCKED", 35, (int) centre.y + 20, 200, 24, juce::Justification::centred);
+
+        g.setColour(juce::Colours::white.withAlpha(0.62f));
+        g.setFont(juce::FontOptions(10.5f).withName("Helvetica").withStyle("Bold"));
+        g.drawText("Activate your copy to unlock the EQ", 32, (int) centre.y + 46, 206, 18, juce::Justification::centred);
+        g.setColour(juce::Colour(0xFF00FF87).withAlpha(0.9f));
+        g.drawText("CLICK TO ENTER CODE", 35, (int) centre.y + 68, 200, 18, juce::Justification::centred);
+    }
+
     if (bypassButton.getToggleState())
     {
         g.excludeClipRegion(bypassButton.getBounds());

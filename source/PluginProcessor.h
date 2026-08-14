@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include <array>
+#include "LicenseManager.h"
 
 class HomeDistoAudioProcessor  : public juce::AudioProcessor
 {
@@ -44,6 +45,9 @@ public:
     
     juce::File currentPresetFile;
     juce::AudioProcessorValueTreeState apvts;
+
+    LicenseManager& getLicenseManager() noexcept { return licenseManager; }
+    const LicenseManager& getLicenseManager() const noexcept { return licenseManager; }
 
     // NEW: preset value locks. When set, loadPreset() below will restore
     // OUT/MIX to whatever the user had them at instead of taking the
@@ -131,6 +135,10 @@ private:
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> smoothFilter;
     
     juce::AudioBuffer<float> dryBuffer;
+
+    // Offline license manager. Only the public verification key lives in the plugin.
+    LicenseManager licenseManager;
+    bool lastEqLicenseState = false;
 
     // Parameter Smoothers (Anti-zipper noise)
     juce::SmoothedValue<float> smoothDrive;

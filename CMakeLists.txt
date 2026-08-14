@@ -47,6 +47,7 @@ juce_generate_juce_header("${PROJECT_NAME}")
 target_sources("${PROJECT_NAME}" PRIVATE
     source/PluginProcessor.cpp
     source/PluginEditor.cpp
+    source/LicenseManager.cpp
 )
 
 # 5. Link necessary JUCE modules
