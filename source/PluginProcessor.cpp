@@ -827,7 +827,7 @@ void HomeDistoAudioProcessor::setStateInformation (const void* data, int sizeInB
             lockMix.store(newLockMix);
             lockEQ.store(newLockEQ);
 
-            currentPresetFile = {};
+            currentPresetFile = juce::File();
             if (savedPresetPath.isNotEmpty())
             {
                 auto candidate = getPresetDirectory().getChildFile(savedPresetPath);
