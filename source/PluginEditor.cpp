@@ -468,6 +468,12 @@ HomeDistoAudioProcessorEditor::HomeDistoAudioProcessorEditor (HomeDistoAudioProc
         juce::CallOutBox::launchAsynchronously(std::move(panel), bounds, nullptr);
     };
 
+    // Quick access to license activation/status, placed next to SETTINGS.
+    licenseButton.setName("LICENSE");
+    licenseButton.setClickingTogglesState(false);
+    addAndMakeVisible(licenseButton);
+    licenseButton.onClick = [this] { showActivationDialog(); };
+
     // NEW: every knob now shows its actual value in a small popup while
     // hovering or dragging (setPopupDisplayEnabled with showOnlyWhileDragging
     // = false means it appears on hover too, not just while adjusting).
@@ -665,13 +671,27 @@ void HomeDistoAudioProcessorEditor::updateLicenseUI()
     const bool unlocked = audioProcessor.getLicenseManager().isActivated();
     eqResetButton.setEnabled(unlocked);
     eqLockButton.setEnabled(unlocked);
+    licenseButton.setToggleState(unlocked, juce::dontSendNotification);
+    licenseButton.setTooltip(unlocked
+                                  ? "Home-Disto is activated - view license status"
+                                  : "Unlock EQ - enter your activation code");
     repaint(20, 265, 230, 125);
 }
 
 void HomeDistoAudioProcessorEditor::showActivationDialog()
 {
     if (audioProcessor.getLicenseManager().isActivated())
+    {
+        auto message = juce::String("Home-Disto EQ is activated.");
+        auto name = audioProcessor.getLicenseManager().getLicenseeName();
+        if (name.isNotEmpty())
+            message += "\n\nLicensed to: " + name;
+
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                                               "Home-Disto Activated",
+                                               message);
         return;
+    }
 
     auto alert = std::make_unique<juce::AlertWindow>(
         "Unlock Home-Disto EQ",
@@ -1655,6 +1675,7 @@ void HomeDistoAudioProcessorEditor::resized()
     presetMenuButton.setBounds(presetArea);
     
     saveButton.setBounds(520, 20, 30, 30); 
+    licenseButton.setBounds(584, 20, 30, 30);
     settingsButton.setBounds(620, 20, 30, 30);
     bypassButton.setBounds(660, 20, 30, 30); 
 

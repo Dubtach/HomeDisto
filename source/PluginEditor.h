@@ -195,6 +195,37 @@ public:
             return;
         }
 
+        // License/activation shortcut beside SETTINGS. Closed/locked is
+        // cyan; activated is green, and the button remains a simple click
+        // target rather than a toggle. Its toggle state is updated by
+        // updateLicenseUI() purely for drawing the current status.
+        if (button.getName() == "LICENSE")
+        {
+            const bool active = button.getToggleState();
+            auto cX = bounds.getCentreX();
+            auto cY = bounds.getCentreY() + 1.0f;
+
+            g.setColour(juce::Colours::black.withAlpha(shouldDrawButtonAsHighlighted ? 0.45f : 0.28f));
+            g.fillEllipse(bounds.reduced(1.0f));
+            g.setColour(active ? juce::Colour(0xFF00FF87) : juce::Colour(0xFF00E5FF));
+            g.drawEllipse(bounds.reduced(1.0f), 1.0f);
+
+            juce::Path shackle;
+            shackle.addCentredArc(cX, cY - 2.8f, 3.2f, 3.2f, 0.0f,
+                                  active ? juce::MathConstants<float>::pi
+                                         : juce::MathConstants<float>::pi * 1.5f,
+                                  juce::MathConstants<float>::twoPi, true);
+            g.strokePath(shackle, juce::PathStrokeType(1.4f,
+                                                        juce::PathStrokeType::curved,
+                                                        juce::PathStrokeType::rounded));
+
+            g.setColour(active ? juce::Colour(0xFF00FF87) : juce::Colour(0xFF00E5FF));
+            g.fillRoundedRectangle(cX - 3.8f, cY - 0.5f, 7.6f, 5.8f, 1.1f);
+            g.setColour(juce::Colour(0xFF09090B));
+            g.fillEllipse(cX - 0.75f, cY + 0.8f, 1.5f, 1.8f);
+            return;
+        }
+
         // NEW: reset icon (circular arrow) for the EQ's "flatten to
         // neutral" button. FIX: outline/backdrop given more contrast to
         // match the lock icons' visibility fix above.
@@ -525,6 +556,7 @@ private:
     juce::TextButton saveButton;
     juce::TextButton bypassButton;
     juce::TextButton settingsButton;
+    juce::TextButton licenseButton;
 
     juce::Slider driveKnob;
     juce::Slider outputKnob; 
