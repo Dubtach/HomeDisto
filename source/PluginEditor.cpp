@@ -142,7 +142,19 @@ public:
             categoryChips.push_back(std::move(chip));
         }
 
-        setSize(300, 440);
+        saveAsButton.setButtonText("SAVE AS");
+        saveAsButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF1A1A1E));
+        saveAsButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white.withAlpha(0.85f));
+        saveAsButton.onClick = [this] { showSaveAsDialog(); };
+        addAndMakeVisible(saveAsButton);
+
+        deleteButton.setButtonText("DELETE");
+        deleteButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF1A1A1E));
+        deleteButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xFFFF6B7A).withAlpha(0.9f));
+        deleteButton.onClick = [this] { deleteCurrentUserPreset(); };
+        addAndMakeVisible(deleteButton);
+
+        setSize(320, 480);
         rebuildLayout();
 
         if (activeRow != nullptr)
@@ -188,6 +200,12 @@ public:
             b.removeFromTop(rows * 26 + 4);
         }
 
+        auto actions = b.removeFromBottom(28);
+        deleteButton.setBounds(actions.removeFromRight(86));
+        actions.removeFromRight(6);
+        saveAsButton.setBounds(actions.removeFromLeft(100));
+        b.removeFromBottom(6);
+
         viewport.setBounds(b);
         rebuildLayout();
     }
@@ -200,6 +218,97 @@ private:
         std::unique_ptr<juce::Label> header;
         std::vector<std::unique_ptr<juce::TextButton>> rows;
     };
+
+    void updateActionButtons()
+    {
+        const bool isUserPreset = processor.currentPresetFile.existsAsFile()
+                               && !processor.isFactoryPreset(processor.currentPresetFile);
+        deleteButton.setEnabled(isUserPreset);
+        deleteButton.setTooltip(isUserPreset ? "Delete this User preset"
+                                             : "Factory presets cannot be deleted");
+    }
+
+    void showSaveAsDialog()
+    {
+        auto alert = std::make_unique<juce::AlertWindow>(
+            "Save Preset As", "Save the current sound as a new User preset.",
+            juce::AlertWindow::NoIcon);
+        alert->addTextEditor("presetName",
+                             processor.currentPresetFile.existsAsFile()
+                                 ? processor.currentPresetFile.getFileNameWithoutExtension()
+                                 : "My Preset",
+                             "Preset Name:");
+        alert->addButton("SAVE", 1, juce::KeyPress(juce::KeyPress::returnKey));
+        alert->addButton("CANCEL", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+        auto* raw = alert.release();
+        raw->enterModalState(true, juce::ModalCallbackFunction::create(
+            [this, raw](int result)
+            {
+                if (result == 1)
+                {
+                    auto name = raw->getTextEditorContents("presetName").trim();
+                    auto cleanName = name.replaceCharacters("\\/:*?\"<>|", "_________").trim();
+                    if (cleanName.isNotEmpty())
+                    {
+                        auto target = processor.getPresetDirectory().getChildFile("User")
+                                          .getChildFile(cleanName + ".xml");
+                        if (target.existsAsFile())
+                        {
+                            auto confirm = std::make_unique<juce::AlertWindow>(
+                                "Overwrite Preset?",
+                                "A User preset with this name already exists. Overwrite it?",
+                                juce::AlertWindow::WarningIcon);
+                            confirm->addButton("OVERWRITE", 1, juce::KeyPress(juce::KeyPress::returnKey));
+                            confirm->addButton("CANCEL", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+                            auto* confirmRaw = confirm.release();
+                            confirmRaw->enterModalState(true, juce::ModalCallbackFunction::create(
+                                [this, confirmRaw, cleanName](int confirmResult)
+                                {
+                                    if (confirmResult == 1)
+                                    {
+                                        processor.savePreset(cleanName, true);
+                                        editor.updatePresetName();
+                                    }
+                                    delete confirmRaw;
+                                }));
+                        }
+                        else
+                        {
+                            processor.savePreset(cleanName, false);
+                            editor.updatePresetName();
+                        }
+                    }
+                }
+                delete raw;
+            }));
+    }
+
+    void deleteCurrentUserPreset()
+    {
+        const auto file = processor.currentPresetFile;
+        if (!file.existsAsFile() || processor.isFactoryPreset(file))
+            return;
+
+        auto confirm = std::make_unique<juce::AlertWindow>(
+            "Delete Preset?",
+            "Delete \"" + file.getFileNameWithoutExtension() + "\"? This cannot be undone.",
+            juce::AlertWindow::WarningIcon);
+        confirm->addButton("DELETE", 1, juce::KeyPress(juce::KeyPress::returnKey));
+        confirm->addButton("CANCEL", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+        auto* raw = confirm.release();
+        raw->enterModalState(true, juce::ModalCallbackFunction::create(
+            [this, raw, file](int result)
+            {
+                if (result == 1)
+                {
+                    processor.deleteUserPreset(file);
+                    editor.updatePresetName();
+                    if (auto* cob = findParentComponentOfClass<juce::CallOutBox>())
+                        cob->dismiss();
+                }
+                delete raw;
+            }));
+    }
 
     void scrollToCategory(const juce::String& categoryName)
     {
@@ -279,6 +388,8 @@ private:
         {
             noResultsLabel->setVisible(false);
         }
+
+        updateActionButtons();
     }
 
     HomeDistoAudioProcessorEditor& editor;
@@ -289,6 +400,8 @@ private:
     juce::Label titleLabel;
     juce::TextEditor searchBox;
     juce::TextButton defaultButton;
+    juce::TextButton saveAsButton;
+    juce::TextButton deleteButton;
     std::vector<std::unique_ptr<juce::TextButton>> categoryChips;
     juce::Viewport viewport;
     std::unique_ptr<juce::Component> content;
