@@ -92,7 +92,7 @@ bool LicenseManager::verifyCode(const juce::String& code, juce::String& licensee
     if (!publicKey.applyToValue(signatureValue))
         return false;
 
-    juce::SHA256 hash { payload.toRawUTF8() };
+    juce::SHA256 hash { payload.getCharPointer() };
     juce::BigInteger expectedHash;
     expectedHash.parseString(hash.toHexString(), 16);
 
