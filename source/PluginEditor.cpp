@@ -1754,12 +1754,6 @@ void HomeDistoAudioProcessorEditor::paintOverChildren(juce::Graphics& g)
         g.setColour(juce::Colours::white);
         g.setFont(juce::FontOptions(18.0f).withName("Helvetica").withStyle("Bold"));
         g.drawText("EQ LOCKED", 35, (int) centre.y + 20, 200, 24, juce::Justification::centred);
-
-        g.setColour(juce::Colours::white.withAlpha(0.62f));
-        g.setFont(juce::FontOptions(10.5f).withName("Helvetica").withStyle("Bold"));
-        g.drawText("Activate your copy to unlock the EQ", 32, (int) centre.y + 46, 206, 18, juce::Justification::centred);
-        g.setColour(juce::Colour(0xFF00FF87).withAlpha(0.9f));
-        g.drawText("CLICK TO ENTER CODE", 35, (int) centre.y + 68, 200, 18, juce::Justification::centred);
     }
 
     if (bypassButton.getToggleState())
