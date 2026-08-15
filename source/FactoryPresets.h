@@ -66,7 +66,43 @@ namespace FactoryPresets
         // moment it loads. There's no jump between "what the preset baked
         // in" and "what AUTO would compute live" because they're the same
         // number by definition.
-        auto setOut = [&](float outDb) { setParam("OUT", outDb); };
+        auto setOut = [&](float outDb) {
+            setParam("OUT", outDb);
+
+            // Refine the original factory library without changing its core
+            // voicing: explicitly set the newer quality controls so factory
+            // presets do not inherit whatever defaults happen to be active.
+            auto getCurrent = [&](const juce::String& id, float fallback) {
+                if (currentTree == nullptr)
+                    return fallback;
+
+                for (int i = 0; i < currentTree->getNumChildren(); ++i)
+                {
+                    auto child = currentTree->getChild(i);
+                    if (child.getProperty("id").toString() == id)
+                        return (float) child.getProperty("value");
+                }
+
+                return fallback;
+            };
+
+            const float drive = getCurrent("DRIVE", 6.0f);
+            const int mode = juce::roundToInt(getCurrent("MODE", 0.0f));
+
+            float smooth = 0.55f;
+            if (drive >= 18.0f) smooth = (mode == 5 ? 0.10f : 0.18f);
+            else if (drive >= 12.0f) smooth = (mode == 5 ? 0.16f : 0.25f);
+            else if (drive >= 7.0f) smooth = 0.38f;
+            setParam("SMOOTH", smooth);
+
+            setParam("HQ", drive >= 10.0f ? 1.0f : 0.0f);
+
+            const int slope = drive >= 14.0f ? (mode == 5 ? 1 : 2)
+                                             : (drive >= 6.0f ? 1 : 0);
+            setParam("SLOPE", (float) slope);
+
+            setParam("AUTO", 1.0f);
+        };
         auto setLow = [&](float freq, bool shelf, float gainDb) {
             setParam("EQ_LOW_FREQ", freq); setParam("EQ_LOW_TYPE", shelf ? 1.0f : 0.0f); setParam("EQ_LOW_GAIN", gainDb);
         };
