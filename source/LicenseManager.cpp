@@ -155,11 +155,12 @@ bool LicenseManager::verifyCode(
     // Load embedded PUBLIC key
     // -------------------------------------------------------------
 
-    juce::RSAKey publicKey(
-        juce::String(HomeDistoLicense::kPublicKey));
+    juce::RSAKey publicKey{
+    juce::String(HomeDistoLicense::kPublicKey)
+};
 
-    if (!publicKey.isValid())
-        return false;
+if (!publicKey.isValid())
+    return false;
 
 
     // -------------------------------------------------------------
