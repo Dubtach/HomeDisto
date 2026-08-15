@@ -1,196 +1,433 @@
 #include "LicenseManager.h"
+#include "HomeDistoPublicKey.h"
+
 #include <cstring>
 
 namespace
 {
-    // Public half of Home-Disto's signing key.
-    // IMPORTANT: this is the existing DEV key for migration/testing only.
-    // Generate a new keypair before commercial release because the matching
-    // private key was exposed.
-    constexpr const char* kPublicKey =
-        "10001,94cb97034443c9a48bde4a216ac4c79a4f395ad9bec6171dd9c0229d225305ce1ec307b4d41f65d25df4d4ef1b5b5eafa820f05b8545d6d9eb4e4fe62800e6f388148c77edac54177764fd7b78953e19901aabc48bd8d6ee3fb28bd3396b44126d5aa66d44d0a3a54d597ca03fb72483c31d9a04c0afbb174f8a62e9796a726da9360113b211f2c84fb46c2b856dfa4805f73699878d8212900079a2a914790dfc3b9a00400ce7a7fc3c9a9c7e56e606b4f7a835a69a3afc20034baf3cd0f7ec973f505bb38b3ebb89747c3644ee8756bed4eb72cf01924f896d02e17e9b36668c2131999f2254a055f3864b3d9a7b13786226e916684c7a7e5d357d19803b11";
-
     juce::String sanitizeLicensee(juce::String text)
     {
         text = text.trim().replaceCharacter('|', ' ');
+
         while (text.contains("  "))
             text = text.replace("  ", " ");
+
         return text.substring(0, 96).trim();
     }
 
-    bool decodeBase64(const juce::String& text, juce::MemoryBlock& result)
+    bool decodeBase64(const juce::String& text,
+                      juce::MemoryBlock& result)
     {
         juce::MemoryOutputStream output;
+
         if (!juce::Base64::convertFromBase64(output, text))
             return false;
+
         result = output.getMemoryBlock();
+
         return !result.isEmpty();
     }
 
-    juce::BigInteger bigIntegerFromBigEndian(const juce::MemoryBlock& input)
+    juce::BigInteger bigIntegerFromBigEndian(
+        const juce::MemoryBlock& input)
     {
         juce::MemoryBlock littleEndian;
         littleEndian.setSize(input.getSize(), false);
+
         for (size_t i = 0; i < input.getSize(); ++i)
             littleEndian[i] = input[input.getSize() - 1 - i];
 
         juce::BigInteger result;
         result.loadFromMemoryBlock(littleEndian);
+
         return result;
     }
 }
 
+
+//==============================================================================
 LicenseManager::LicenseManager()
 {
     loadStoredLicense();
 }
 
+
+//==============================================================================
 juce::File LicenseManager::getLicenseFile() const
 {
-    auto dir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                    .getChildFile("Dubtach")
-                    .getChildFile("Home-Disto");
+    auto dir =
+        juce::File::getSpecialLocation(
+            juce::File::userApplicationDataDirectory)
+            .getChildFile("Dubtach")
+            .getChildFile("Home-Disto");
+
     dir.createDirectory();
+
     return dir.getChildFile("license.dat");
 }
 
-bool LicenseManager::verifyCode(const juce::String& code, juce::String& licenseeOut) const
+
+//==============================================================================
+bool LicenseManager::verifyCode(
+    const juce::String& code,
+    juce::String& licenseeOut) const
 {
-    auto trimmed = code.trim();
-    auto parts = juce::StringArray::fromTokens(trimmed, "|", {});
-    if (parts.size() != 3 || parts[0] != "HD2")
+    // -------------------------------------------------------------
+    // Basic activation-code structure
+    // -------------------------------------------------------------
+
+    const auto trimmed = code.trim();
+
+    auto parts =
+        juce::StringArray::fromTokens(
+            trimmed,
+            "|",
+            {});
+
+    if (parts.size() != 3)
         return false;
 
-    juce::MemoryBlock payloadBytes, signatureBytes;
-    if (!decodeBase64(parts[1], payloadBytes) || !decodeBase64(parts[2], signatureBytes))
+    // HD2 only
+    if (parts[0] != "HD2")
         return false;
 
-    auto payload = juce::String::createStringFromData(payloadBytes.getData(), (int) payloadBytes.getSize());
+
+    // -------------------------------------------------------------
+    // Decode payload + signature
+    // -------------------------------------------------------------
+
+    juce::MemoryBlock payloadBytes;
+    juce::MemoryBlock signatureBytes;
+
+    if (!decodeBase64(parts[1], payloadBytes))
+        return false;
+
+    if (!decodeBase64(parts[2], signatureBytes))
+        return false;
+
+
+    // -------------------------------------------------------------
+    // Decode payload
+    // -------------------------------------------------------------
+
+    auto payload =
+        juce::String::createStringFromData(
+            payloadBytes.getData(),
+            static_cast<int>(payloadBytes.getSize()));
+
     if (payload.isEmpty())
         return false;
 
-    auto payloadParts = juce::StringArray::fromTokens(payload, "|", {});
+
+    auto payloadParts =
+        juce::StringArray::fromTokens(
+            payload,
+            "|",
+            {});
+
     if (payloadParts.size() != 4)
         return false;
-    if (payloadParts[0] != kProductId || payloadParts[1].getIntValue() != kLicenseVersion || payloadParts[2] != "FULL")
+
+
+    // HOMEDISTO|2|FULL|Licensee
+    if (payloadParts[0] != "HOMEDISTO")
         return false;
 
-    auto licensee = sanitizeLicensee(payloadParts[3]);
+    if (payloadParts[1].getIntValue() != 2)
+        return false;
+
+    if (payloadParts[2] != "FULL")
+        return false;
+
+
+    // -------------------------------------------------------------
+    // Sanitize licensee
+    // -------------------------------------------------------------
+
+    auto licensee =
+        sanitizeLicensee(payloadParts[3]);
+
     if (licensee.isEmpty())
         return false;
 
-    juce::RSAKey publicKey { juce::String(kPublicKey) };
+
+    // -------------------------------------------------------------
+    // Load embedded PUBLIC key
+    // -------------------------------------------------------------
+
+    juce::RSAKey publicKey(
+        juce::String(HomeDistoLicense::kPublicKey));
+
     if (!publicKey.isValid())
         return false;
 
-    // HD2 uses standard RSA PKCS#1 v1.5 + SHA-256.
-    // RSAKey::applyToValue() performs the raw public-key exponentiation;
-    // afterwards the result must equal the exact EMSA-PKCS1-v1_5 encoded block.
-    auto keyText = juce::String(kPublicKey);
-    auto comma = keyText.indexOfChar(',');
+
+    // -------------------------------------------------------------
+    // Determine RSA key size
+    // -------------------------------------------------------------
+
+    auto keyText =
+        juce::String(HomeDistoLicense::kPublicKey);
+
+    auto comma =
+        keyText.indexOfChar(',');
+
     if (comma <= 0)
         return false;
 
     juce::BigInteger modulus;
-    modulus.parseString(keyText.substring(comma + 1), 16);
-    const size_t keyBytes = (size_t) ((modulus.getHighestBit() + 1 + 7) / 8);
-    if (signatureBytes.getSize() != keyBytes || keyBytes < 11)
+
+    modulus.parseString(
+        keyText.substring(comma + 1),
+        16);
+
+    if (modulus.isZero())
         return false;
 
-    auto signatureValue = bigIntegerFromBigEndian(signatureBytes);
+    const size_t keyBytes =
+        static_cast<size_t>(
+            (modulus.getHighestBit() + 1 + 7) / 8);
+
+    // 3072-bit RSA = 384 bytes
+    if (signatureBytes.getSize() != keyBytes)
+        return false;
+
+
+    // -------------------------------------------------------------
+    // Convert signature to BigInteger
+    // -------------------------------------------------------------
+
+    auto signatureValue =
+        bigIntegerFromBigEndian(signatureBytes);
+
     if (signatureValue.isZero())
         return false;
+
+
+    // -------------------------------------------------------------
+    // RSA public-key operation
+    // -------------------------------------------------------------
 
     if (!publicKey.applyToValue(signatureValue))
         return false;
 
-    juce::SHA256 hash { payload.getCharPointer() };
+
+    // -------------------------------------------------------------
+    // SHA-256
+    // -------------------------------------------------------------
+
+    juce::SHA256 hash(
+        payload.getCharPointer());
+
     juce::MemoryBlock digest;
-    digest.loadFromHexString(hash.toHexString());
 
-    // SHA-256 DigestInfo DER prefix:
-    // 30 31 30 0D 06 09 60 86 48 01 65 03 04 02 01 05 00 04 20
-    static constexpr unsigned char sha256DigestInfoPrefix[] = {
-        0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48,
-        0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0x04, 0x20
-    };
+    digest.loadFromHexString(
+        hash.toHexString());
 
-    const size_t digestInfoSize = sizeof(sha256DigestInfoPrefix) + digest.getSize();
-    if (digest.getSize() != 32 || keyBytes < digestInfoSize + 11)
+    if (digest.getSize() != 32)
         return false;
 
-    juce::MemoryBlock expectedEncoded(keyBytes, true);
-    auto* encoded = static_cast<unsigned char*> (expectedEncoded.getData());
+
+    // -------------------------------------------------------------
+    // PKCS#1 v1.5 SHA-256 DigestInfo prefix
+    //
+    // SEQUENCE
+    //   SHA-256 AlgorithmIdentifier
+    //   OCTET STRING (32-byte digest)
+    // -------------------------------------------------------------
+
+    static constexpr unsigned char sha256DigestInfoPrefix[] =
+    {
+        0x30, 0x31,
+        0x30, 0x0D,
+        0x06, 0x09,
+        0x60, 0x86, 0x48,
+        0x01, 0x65,
+        0x03, 0x04,
+        0x02, 0x01,
+        0x05, 0x00,
+        0x04, 0x20
+    };
+
+
+    const size_t digestInfoSize =
+        sizeof(sha256DigestInfoPrefix) +
+        digest.getSize();
+
+    if (keyBytes <
+        digestInfoSize + 11)
+    {
+        return false;
+    }
+
+
+    // -------------------------------------------------------------
+    // Construct expected EMSA-PKCS1-v1_5 block
+    //
+    // 00 01 FF FF FF ... FF 00 DigestInfo
+    // -------------------------------------------------------------
+
+    juce::MemoryBlock expectedEncoded(
+        keyBytes,
+        true);
+
+    auto* encoded =
+        static_cast<unsigned char*>(
+            expectedEncoded.getData());
+
     encoded[0] = 0x00;
     encoded[1] = 0x01;
 
-    const size_t paddingSize = keyBytes - digestInfoSize - 3;
-    std::memset(encoded + 2, 0xff, paddingSize);
-    encoded[2 + paddingSize] = 0x00;
-    std::memcpy(encoded + 3 + paddingSize,
-                sha256DigestInfoPrefix, sizeof(sha256DigestInfoPrefix));
-    digest.copyTo(encoded + 3 + paddingSize + sizeof(sha256DigestInfoPrefix),
-                  0, digest.getSize());
 
-    auto expectedEncodedValue = bigIntegerFromBigEndian(expectedEncoded);
+    const size_t paddingSize =
+        keyBytes -
+        digestInfoSize -
+        3;
+
+    std::memset(
+        encoded + 2,
+        0xFF,
+        paddingSize);
+
+
+    encoded[2 + paddingSize] = 0x00;
+
+
+    std::memcpy(
+        encoded + 3 + paddingSize,
+        sha256DigestInfoPrefix,
+        sizeof(sha256DigestInfoPrefix));
+
+
+    digest.copyTo(
+        encoded +
+            3 +
+            paddingSize +
+            sizeof(sha256DigestInfoPrefix),
+        0,
+        digest.getSize());
+
+
+    // -------------------------------------------------------------
+    // Compare decrypted signature against expected block
+    // -------------------------------------------------------------
+
+    auto expectedEncodedValue =
+        bigIntegerFromBigEndian(
+            expectedEncoded);
+
     if (signatureValue != expectedEncodedValue)
         return false;
 
+
+    // -------------------------------------------------------------
+    // Everything passed
+    // -------------------------------------------------------------
+
     licenseeOut = licensee;
+
     return true;
 }
 
-bool LicenseManager::activate(const juce::String& activationCodeToStore)
+
+//==============================================================================
+bool LicenseManager::activate(
+    const juce::String& activationCodeToStore)
 {
     juce::String verifiedLicensee;
-    if (!verifyCode(activationCodeToStore, verifiedLicensee))
-        return false;
 
-    activationCode = activationCodeToStore.trim();
-    licenseeName = verifiedLicensee;
-    activated.store(true, std::memory_order_release);
-    storeLicense(activationCode, licenseeName);
+    if (!verifyCode(
+            activationCodeToStore,
+            verifiedLicensee))
+    {
+        return false;
+    }
+
+    activationCode =
+        activationCodeToStore.trim();
+
+    licenseeName =
+        verifiedLicensee;
+
+    activated.store(
+        true,
+        std::memory_order_release);
+
+    storeLicense(
+        activationCode,
+        licenseeName);
+
     return true;
 }
 
+
+//==============================================================================
 void LicenseManager::deactivate()
 {
-    activated.store(false, std::memory_order_release);
+    activated.store(
+        false,
+        std::memory_order_release);
+
     activationCode.clear();
     licenseeName.clear();
+
     clearStoredLicense();
 }
 
+
+//==============================================================================
 juce::String LicenseManager::getLicenseeName() const
 {
     return licenseeName;
 }
 
+
+//==============================================================================
 juce::String LicenseManager::getStoredActivationCode() const
 {
     return activationCode;
 }
 
+
+//==============================================================================
 void LicenseManager::loadStoredLicense()
 {
-    auto file = getLicenseFile();
+    auto file =
+        getLicenseFile();
+
     if (!file.existsAsFile())
         return;
 
-    auto xml = juce::parseXML(file);
+
+    auto xml =
+        juce::parseXML(file);
+
     if (xml == nullptr)
         return;
 
-    auto storedCode = xml->getStringAttribute("code").trim();
+
+    auto storedCode =
+        xml->getStringAttribute("code").trim();
+
     if (storedCode.isEmpty())
         return;
 
+
     juce::String verifiedLicensee;
-    if (verifyCode(storedCode, verifiedLicensee))
+
+    if (verifyCode(
+            storedCode,
+            verifiedLicensee))
     {
-        activationCode = storedCode;
-        licenseeName = verifiedLicensee;
-        activated.store(true, std::memory_order_release);
+        activationCode =
+            storedCode;
+
+        licenseeName =
+            verifiedLicensee;
+
+        activated.store(
+            true,
+            std::memory_order_release);
     }
     else
     {
@@ -198,14 +435,31 @@ void LicenseManager::loadStoredLicense()
     }
 }
 
-void LicenseManager::storeLicense(const juce::String& code, const juce::String& licensee)
+
+//==============================================================================
+void LicenseManager::storeLicense(
+    const juce::String& code,
+    const juce::String& licensee)
 {
-    auto xml = std::make_unique<juce::XmlElement>("HomeDistoLicense");
-    xml->setAttribute("code", code);
-    xml->setAttribute("licensee", licensee);
-    getLicenseFile().replaceWithText(xml->toString());
+    auto xml =
+        std::make_unique<juce::XmlElement>(
+            "HomeDistoLicense");
+
+    xml->setAttribute(
+        "code",
+        code);
+
+    xml->setAttribute(
+        "licensee",
+        licensee);
+
+    getLicenseFile()
+        .replaceWithText(
+            xml->toString());
 }
 
+
+//==============================================================================
 void LicenseManager::clearStoredLicense()
 {
     getLicenseFile().deleteFile();
