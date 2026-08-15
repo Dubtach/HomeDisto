@@ -125,7 +125,7 @@ namespace FactoryPresets
             setMode(0.0f); // PUNCH
             setParam("DRIVE", 6.0f); setParam("MIX", 1.0f); setOut(-3.4f);
             setParam("TONE", 0.0f); setParam("PUNCH", 0.3f);
-            setLow(80.0f, false, 0.0f);
+            setLow(20.0f, false, 0.0f);
             setBell1(400.0f, -0.4f, 0.8f);
             setBell2(3000.0f, 0.4f, 0.8f);
             setHigh(20000.0f, false, 0.0f);

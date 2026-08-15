@@ -147,6 +147,13 @@ void HomeDistoAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
 
     toneFilter.prepare(spec);
     smoothFilter.prepare(spec);
+
+    // Replace the old final tanh() ceiling with a dedicated dynamics limiter.
+    // Normal material below the ceiling is not continuously waveshaped.
+    safetyLimiter.prepare(spec);
+    safetyLimiter.setThreshold(-0.3f);
+    safetyLimiter.setRelease(80.0f);
+
     dcBlockerFilter.prepare(spec);
     dcBlockerFilter.state = juce::dsp::IIR::Coefficients<float>::makeHighPass(sampleRate, 15.0f);
 
@@ -788,25 +795,17 @@ void HomeDistoAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
             float wetSignal = writePointers[channel][sample];
             float drySignal = dryPointers[channel][sample];
             
-            // Absolute final safety net: intercept rogue values immediately prior to host output
+            // Output remains a true gain stage; the dedicated safety limiter
+            // below provides the actual ceiling instead of another waveshaper.
             float finalOut = (drySignal * (1.0f - currentMix) + wetSignal * currentMix) * currentOut;
             if (!std::isfinite(finalOut)) finalOut = 0.0f;
-
-            // FIX: there was no actual output ceiling anywhere in the chain.
-            // DRIVE (up to +24 dB) feeding the shaper, plus OUTPUT (up to
-            // another +24 dB) on top, meant the final level could land well
-            // past 0 dBFS with nothing to stop it -- which is exactly what
-            // pegs a DAW meter red the moment the plugin is inserted/played,
-            // regardless of what state/preset it happens to load in.
-            // tanh() is ~identity for anything under about -6 dBFS (fully
-            // transparent for normal signal levels) and smoothly limits
-            // anything hotter than that toward +/-1.0, so it can never blast
-            // out past unity no matter what the knobs/preset are doing.
-            finalOut = std::tanh(finalOut);
-
             writePointers[channel][sample] = finalOut;
         }
     }
+
+    // Final safety stage. Unlike tanh(), this applies gain reduction only when
+    // the signal approaches the configured ceiling.
+    safetyLimiter.process(context);
 }
 
 void HomeDistoAudioProcessor::getStateInformation (juce::MemoryBlock& destData)

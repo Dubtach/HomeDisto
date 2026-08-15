@@ -134,6 +134,10 @@ private:
     // stage and is controlled by the SMOOTH parameter in the settings popup.
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> smoothFilter;
     
+    // Dedicated output safety limiter. Unlike the old final tanh(), this is
+    // not a continuous waveshaper; it only applies gain reduction near the ceiling.
+    juce::dsp::Limiter<float> safetyLimiter;
+
     juce::AudioBuffer<float> dryBuffer;
 
     // Offline license manager. Only the public verification key lives in the plugin.

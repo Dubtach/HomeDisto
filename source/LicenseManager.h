@@ -2,7 +2,7 @@
 #include <JuceHeader.h>
 #include <atomic>
 
-// Simple offline product licensing for Home-Disto.
+// Offline product licensing for Home-Disto.\n// HD2 uses a standard RSA PKCS#1 v1.5 signature over SHA-256.
 // The plugin contains only the public RSA verification key. The matching
 // private key lives on the seller's website/license-generation service.
 class LicenseManager
@@ -19,7 +19,7 @@ public:
 
 private:
     static constexpr const char* kProductId = "HOMEDISTO";
-    static constexpr int kLicenseVersion = 1;
+    static constexpr int kLicenseVersion = 2;
 
     bool verifyCode(const juce::String& code, juce::String& licenseeOut) const;
     void loadStoredLicense();
